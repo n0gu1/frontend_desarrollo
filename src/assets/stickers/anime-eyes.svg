@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="256" viewBox="0 0 512 256">
+  <!-- ojo izquierdo -->
+  <ellipse cx="200" cy="140" rx="70" ry="40" fill="#fff" stroke="#111827" stroke-width="6"/>
+  <ellipse cx="205" cy="140" rx="28" ry="28" fill="#111827"/>
+  <circle cx="195" cy="128" r="8" fill="#fff"/>
+  <!-- ojo derecho -->
+  <ellipse cx="312" cy="140" rx="70" ry="40" fill="#fff" stroke="#111827" stroke-width="6"/>
+  <ellipse cx="307" cy="140" rx="28" ry="28" fill="#111827"/>
+  <circle cx="317" cy="128" r="8" fill="#fff"/>
+</svg>

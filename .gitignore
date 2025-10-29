@@ -1,0 +1,40 @@
+# node modules
+node_modules/
+
+# producción
+dist/
+build/
+
+# archivos de entorno
+.env
+.env.*.local
+
+# archivos del IDE
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# archivos del sistema
+.DS_Store
+Thumbs.db
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# cache de paquetes
+.cache/
+.eslintcache
+.pnpm-store/
+*.tsbuildinfo
+
+# test coverage
+coverage/
+
+# lockfiles (elige solo uno)
+package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
