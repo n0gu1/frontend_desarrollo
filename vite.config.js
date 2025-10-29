@@ -11,8 +11,8 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': { target: 'http://localhost:5212', changeOrigin: true },
-      '/uploads': { target: 'http://localhost:5212', changeOrigin: true }, // ⬅️ nuevo
+      '/api': { target: 'https://baseusuariosapi20251029021137-bnb3cfawhthmhggs.centralus-01.azurewebsites.net', changeOrigin: true },
+      '/uploads': { target: 'https://baseusuariosapi20251029021137-bnb3cfawhthmhggs.centralus-01.azurewebsites.net', changeOrigin: true }, // ⬅️ nuevo
     },
   },
 })
