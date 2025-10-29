@@ -888,7 +888,7 @@ async function onSubmit() {
       photoMime:    photoMime,
       photo2Base64: editedDataUrl,    
       photo2Mime:   photo2Mime,
-      roleId: 2
+      roleId: 4
     })
     console.debug('Usuario creado', data?.id)
 
