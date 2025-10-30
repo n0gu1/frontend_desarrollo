@@ -299,6 +299,10 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { get, post } from '../lib/api'
 
+/* ===================== API BASE (desde Netlify) ===================== */
+/* Usa VITE_API_URL y quita cualquier / final */
+const API_BASE = String((import.meta as any).env?.VITE_API_URL || '').replace(/\/+$/, '')
+
 /* ===================== CONFIG ===================== */
 const BASE_KEYCHAIN_URL = '/images/llavero-base.png'
 const CANVAS = { W: 680, H: 680 }
@@ -372,10 +376,15 @@ function loadImage(url: string): Promise<HTMLImageElement> {
 }
 
 function isDataUrl(u?: string | null) { return !!u && /^data:image\/[a-z0-9+.-]+;base64,/i.test(u) }
+
+/* 🔵 Resolver URLs: si vienen como /uploads/... se sirven desde el backend (no Netlify) */
 function resolveLayerUrl(raw?: string | null) {
   if (!raw) return null
   if (isDataUrl(raw)) return raw
   if (raw.startsWith('http://') || raw.startsWith('https://')) return raw
+  if (raw.startsWith('/uploads/')) return `${API_BASE}${raw}`
+  if (raw.startsWith('uploads/'))  return `${API_BASE}/${raw}`
+  // Otros assets del front
   return raw.startsWith('/') ? raw : `/${raw}`
 }
 
@@ -495,7 +504,8 @@ async function ensurePersonalization() {
   if (isBusy.value) return
   isBusy.value = true
   try {
-    const r = await post('/api/local/personalizations', { carritoItemId, lado: lado.value })
+    // estos GET/POST usan tu wrapper ../lib/api (que ya debería apuntar a VITE_API_URL)
+    const r = await post(`/api/local/personalizations`, { carritoItemId, lado: lado.value })
     personalizationId.value = r.id
     await loadLayers(true)
   } catch (e: any) { toastError(getMsg(e)) }
@@ -565,14 +575,16 @@ async function uploadFile(f: File) {
     syncUiFromActive()
     scheduleRender()
 
-    // Subida real
+    // 🔵 Subida real SIEMPRE al backend (API_BASE)
     const fd = new FormData()
     fd.append('personalizationId', String(personalizationId.value))
     fd.append('lado', String(lado.value))
     fd.append('file', f)
 
-    let resp = await fetch('/api/local/uploads', { method: 'POST', body: fd, credentials: 'include' })
-    if (!resp.ok && resp.status === 404) resp = await fetch('/api/uploads', { method: 'POST', body: fd, credentials: 'include' })
+    let resp = await fetch(`${API_BASE}/api/local/uploads`, { method: 'POST', body: fd })
+    if (!resp.ok && resp.status === 404) {
+      resp = await fetch(`${API_BASE}/api/uploads`, { method: 'POST', body: fd })
+    }
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
     const up = await resp.json()
 
@@ -808,7 +820,8 @@ function nudgeRotate(deltaDeg: number) {
 }
 function centerActive() {
   const l = activeLayer.value; if (!l) return
-  l.pos_x = 0.5; l.pos_y = CIRCLE.cy; clampLayerInside(l); scheduleRender()
+  const { cy } = CIRCLE
+  l.pos_x = 0.5; l.pos_y = cy; clampLayerInside(l); scheduleRender()
 }
 function fitCircleActive() {
   const l = activeLayer.value; if (!l) return
@@ -866,7 +879,7 @@ function renderPreview() {
     const bx = (W - bw) / 2, by = (H - bh) / 2
     ctx.drawImage(base, bx, by, bw, bh)
   } else {
-    loadImage(BASE_KEYCHAIN_URL).then(() => scheduleRender())
+    loadImage(BASE_KEYCHAIN_URL).finally(() => scheduleRender())
   }
 
   // Oscurecer fuera del círculo
@@ -975,7 +988,6 @@ function onKey(e: KeyboardEvent) {
 
 onMounted(async () => {
   await nextTick()
-  // Precarga base para evitar parpadeos y asegura que getImageDims funcione
   loadImage(BASE_KEYCHAIN_URL).finally(() => scheduleRender())
   await ensurePersonalization()
   window.addEventListener('keydown', onKey)
