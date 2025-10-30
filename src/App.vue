@@ -2,10 +2,10 @@
   <v-app>
     <!-- Barra superior -->
     <v-app-bar flat color="transparent" class="px-3 px-md-6">
-      <RouterLink to="/" class="d-flex align-center text-decoration-none">
+      <!-- <RouterLink to="/" class="d-flex align-center text-decoration-none">
         <v-icon icon="mdi-key-variant" class="mr-2" />
         <span class="text-h6 font-weight-bold">Mi Tienda</span>
-      </RouterLink>
+      </RouterLink> -->
 
       <v-spacer />
 
@@ -20,7 +20,7 @@
       </template>
 
       <!-- CON sesión: sólo Carrito + Salir (SIN mostrar usuario) -->
-      <template v-else>
+      <!-- <template v-else>
         <RouterLink to="/cart">
           <v-btn color="primary" class="mr-2" variant="flat">
             <v-icon icon="mdi-cart-outline" class="mr-2" />
@@ -31,7 +31,7 @@
         <v-btn color="grey" variant="text" @click="logout">
           <v-icon icon="mdi-logout" class="mr-1" /> Salir
         </v-btn>
-      </template>
+      </template> -->
     </v-app-bar>
 
     <v-main>

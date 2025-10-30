@@ -28,17 +28,41 @@
               <td class="text-right">Q {{ fmt(it.precio_unitario) }}</td>
               <td class="text-center">
                 <div class="d-flex align-center justify-center ga-2">
-                  <v-btn size="small" variant="tonal" icon="mdi-minus" :disabled="busyIds.has(it.id) || it.cantidad <= 1"
-                    @click="dec(it)" />
-                  <v-text-field v-model.number="qtyDraft[it.id]" type="number" min="1" hide-details density="compact"
-                    style="max-width:80px" @blur="applyDraft(it)" @keyup.enter="applyDraft(it)" />
-                  <v-btn size="small" variant="tonal" icon="mdi-plus" :disabled="busyIds.has(it.id)" @click="inc(it)" />
+                  <v-btn
+                    size="small"
+                    variant="tonal"
+                    icon="mdi-minus"
+                    :disabled="busyIds.has(it.id) || it.cantidad <= 1"
+                    @click="dec(it)"
+                  />
+                  <v-text-field
+                    v-model.number="qtyDraft[it.id]"
+                    type="number"
+                    min="1"
+                    hide-details
+                    density="compact"
+                    style="max-width:80px"
+                    @blur="applyDraft(it)"
+                    @keyup.enter="applyDraft(it)"
+                  />
+                  <v-btn
+                    size="small"
+                    variant="tonal"
+                    icon="mdi-plus"
+                    :disabled="busyIds.has(it.id)"
+                    @click="inc(it)"
+                  />
                 </div>
               </td>
               <td class="text-right">Q {{ fmt(it.subtotal) }}</td>
               <td class="text-center">
-                <v-btn :loading="busyIds.has(it.id)" color="error" variant="text" icon="mdi-delete"
-                  @click="removeItem(it)" />
+                <v-btn
+                  :loading="busyIds.has(it.id)"
+                  color="error"
+                  variant="text"
+                  icon="mdi-delete"
+                  @click="removeItem(it)"
+                />
               </td>
             </tr>
           </tbody>
@@ -59,7 +83,6 @@
           <v-btn color="primary" class="mt-4" @click="router.push('/checkout')" :disabled="!items.length">
             Proceder al checkout
           </v-btn>
-
         </div>
       </v-card>
     </v-col>
@@ -68,16 +91,12 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { get, put, del } from '../lib/api' // helper existente
+import { get, put, del, post } from '../lib/api'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
 const usuarioId = Number(localStorage.getItem('userId') || '0')
-if (!usuarioId) {
-  // Redirige a login o muestra error
-  router.push('/login')
-}
-
+if (!usuarioId) router.push('/login')
 
 type Item = {
   id: number
@@ -88,23 +107,62 @@ type Item = {
   subtotal: number
 }
 
+const OBJETIVO_PRODUCTO_ID = 3
+
 const items = ref<Item[]>([])
 const total = ref(0)
 const error = ref('')
 const busyIds = ref<Set<number>>(new Set())
 const qtyDraft = ref<Record<number, number>>({})
 
+function toNum(n: any) { const x = Number(n); return Number.isFinite(x) ? x : 0 }
 function fmt(n: number) {
-  return n.toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return toNum(n).toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+async function ensureItemObjetivo() {
+  // Intenta crear el ítem de producto 3 en el carrito del usuario
+  try {
+    try {
+      await post('/api/local/cart/items', { usuarioId, productoId: OBJETIVO_PRODUCTO_ID, cantidad: 1 })
+      return
+    } catch (e1) {
+      try {
+        await post('/api/local/cart/add', { usuarioId, productoId: OBJETIVO_PRODUCTO_ID, cantidad: 1 })
+        return
+      } catch (e2) {
+        await post('/api/cart/add', { usuarioId, productoId: OBJETIVO_PRODUCTO_ID, cantidad: 1 })
+        return
+      }
+    }
+  } catch (e: any) {
+    error.value = e?.message || 'No se pudo agregar el producto #3 automáticamente'
+  }
 }
 
 async function load() {
   error.value = ''
   try {
-    // Usa el endpoint local que ya tienes documentado: GET /api/local/cart?usuarioId=#
-    const r = await get<{ carritoId?: number, items: Item[], total: number }>(`/api/local/cart?usuarioId=${usuarioId}`)
-    items.value = r.items || []
-    total.value = r.total || 0
+    const r = await get<{ carritoId?: number; items: Item[]; total: number }>(
+      `/api/local/cart?usuarioId=${usuarioId}`
+    )
+    const all = Array.isArray(r.items) ? r.items : []
+
+    let filtered = all.filter(it => toNum(it.producto_id) === OBJETIVO_PRODUCTO_ID)
+
+    // Si no está, créalo y vuelve a cargar una vez
+    if (!filtered.length) {
+      await ensureItemObjetivo()
+      const r2 = await get<{ items: Item[]; total: number }>(`/api/local/cart?usuarioId=${usuarioId}`)
+      filtered = (r2.items || []).filter(it => toNum(it.producto_id) === OBJETIVO_PRODUCTO_ID)
+    }
+
+    items.value = filtered
+    total.value = filtered.reduce(
+      (s, it) => s + (toNum(it.subtotal) || toNum(it.precio_unitario) * toNum(it.cantidad)),
+      0
+    )
+
     qtyDraft.value = {}
     for (const it of items.value) qtyDraft.value[it.id] = it.cantidad
   } catch (e: any) {
@@ -116,7 +174,6 @@ async function updateQty(it: Item, cantidad: number) {
   if (cantidad < 1) cantidad = 1
   busyIds.value.add(it.id)
   try {
-    // PUT /api/local/cart/items/{itemId} { cantidad }
     await put(`/api/local/cart/items/${it.id}`, { cantidad })
     await load()
   } catch (e: any) {
@@ -130,7 +187,7 @@ function inc(it: Item) { updateQty(it, it.cantidad + 1) }
 function dec(it: Item) { if (it.cantidad > 1) updateQty(it, it.cantidad - 1) }
 
 function applyDraft(it: Item) {
-  const v = Number(qtyDraft.value[it.id] ?? it.cantidad)
+  const v = toNum(qtyDraft.value[it.id] ?? it.cantidad)
   if (!Number.isFinite(v) || v < 1) { qtyDraft.value[it.id] = it.cantidad; return }
   if (v !== it.cantidad) updateQty(it, v)
 }
@@ -138,7 +195,6 @@ function applyDraft(it: Item) {
 async function removeItem(it: Item) {
   busyIds.value.add(it.id)
   try {
-    // DELETE /api/local/cart/items/{itemId}
     await del(`/api/local/cart/items/${it.id}`)
     await load()
   } catch (e: any) {
@@ -146,12 +202,6 @@ async function removeItem(it: Item) {
   } finally {
     busyIds.value.delete(it.id)
   }
-}
-
-function goCheckout() {
-  // Aquí rediriges a tu paso de checkout (cuando lo tengas)
-  // Por ahora lo dejamos en /customize o donde corresponda:
-  router.push('/customize')
 }
 
 onMounted(load)
