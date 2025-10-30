@@ -253,6 +253,18 @@ const initials = computed(() => {
 })
 function readAuthFromStorage() { userId.value = Number(localStorage.getItem('userId') || '0') }
 function logout() {
+  // limpia estado por-usuario para evitar reuso accidental
+  const uid = userId.value
+  if (uid) {
+    localStorage.removeItem(`draftItem:${uid}`)
+    localStorage.removeItem(`lastItemId:${uid}`)
+  }
+  imageCache.clear()
+  allLayers.value = []
+  personalizationId.value = null
+  imageUrlInput.value = ''
+  lado.value = 'A'
+
   localStorage.removeItem('userId')
   localStorage.removeItem('nickname')
   readAuthFromStorage()
@@ -298,9 +310,23 @@ const CANVAS = { W: 680, H: 680 }
 const CIRCLE = { cx: 0.5, cy: 0.58, r: 0.30 }
 const NORMAL_SIDE_FACTOR = 0.85
 
-// Item de carrito y lado activo
+// carritoItemId por-usuario (o desde ?itemId=)
 const params = new URLSearchParams(globalThis.location?.search || '')
-const carritoItemId = Number(params.get('itemId') || '1')
+const paramItemId = params.get('itemId')
+const carritoItemId = ref<number>(0)
+function ensureCartItemId() {
+  const uid = requireUserId()
+  if (paramItemId && Number(paramItemId)) {
+    carritoItemId.value = Number(paramItemId)
+    localStorage.setItem(`lastItemId:${uid}`, String(carritoItemId.value))
+    return
+  }
+  const key = `draftItem:${uid}`
+  let v = Number(localStorage.getItem(key) || '0')
+  if (!v) { v = Date.now(); localStorage.setItem(key, String(v)) }
+  carritoItemId.value = v
+}
+
 const lado = ref<'A' | 'B'>('A')
 const personalizationId = ref<number | null>(null)
 
@@ -360,7 +386,7 @@ async function ensurePersonalization() {
   isBusy.value = true
   try {
     const uid = requireUserId()
-    const r = await post(`/api/local/personalizations`, { carritoItemId, lado: lado.value, usuarioId: uid })
+    const r = await post(`/api/local/personalizations`, { carritoItemId: carritoItemId.value, lado: lado.value, usuarioId: uid })
     personalizationId.value = r.id
     await loadLayers(true)
   } catch (e: any) { toast(getMsg(e)) }
@@ -600,6 +626,7 @@ onMounted(async () => {
   })
   window.addEventListener('auth-sync', readAuthFromStorage)
 
+  ensureCartItemId()
   await cargarPerfil()
   await nextTick()
   loadImage(BASE_KEYCHAIN_URL).finally(() => scheduleRender())
@@ -621,9 +648,9 @@ watch(lado, async () => { await ensurePersonalization() })
 .page-topbar {
   --topbar-h: 56px;
   position: fixed;
-  inset: 0 0 auto 0;           /* top:0; left:0; right:0 */
+  inset: 0 0 auto 0;
   height: var(--topbar-h);
-  z-index: 2000;               /* por encima del contenido */
+  z-index: 2000;
   background: #fff;
   border-bottom: 1px solid rgba(0,0,0,.06);
   pointer-events: auto;
