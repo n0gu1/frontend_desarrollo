@@ -27,5 +27,8 @@ export default createRouter({
     { path: '/tracking-admin', component: () => import('../views/TrackingAdmin.vue') },
     { path: '/orders/history', component: () => import('../views/OrderHistory.vue') },
     { path: '/dashboard', component: DashboardView },
+    { path: '/operador', component: () => import('../views/operador.vue') },
+    { path: '/repartidor', component: () => import('../views/Repartidor.vue') },
+    { path: '/supervisor', component: () => import('../views/Supervisor.vue') },
   ],
 })
