@@ -9,6 +9,19 @@
               Vista previa
             </v-toolbar-title>
             <v-spacer />
+
+            <!-- NUEVO: indicador del folio (si existe) -->
+            <v-chip
+              v-if="folio"
+              size="small"
+              variant="tonal"
+              color="secondary"
+              class="mr-2"
+              title="Folio de la orden con el que se guardarán las fotos"
+            >
+              Folio: {{ folio }}
+            </v-chip>
+
             <v-chip size="small" variant="tonal" color="primary" class="mr-2">
               Lado {{ lado }}
             </v-chip>
@@ -299,14 +312,13 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { get, post } from '../lib/api'
 
-/* ===================== API BASE (desde Netlify) ===================== */
-/* Usa VITE_API_URL y quita cualquier / final */
-const API_BASE = String((import.meta as any).env?.VITE_API_URL || '').replace(/\/+$/, '')
+/* ===================== API BASE ===================== */
+/* Acepta VITE_API_URL o VITE_API_BASE, quita cualquier / final */
+const API_BASE = String((import.meta as any).env?.VITE_API_URL || (import.meta as any).env?.VITE_API_BASE || '').replace(/\/+$/, '')
 
 /* ===================== CONFIG ===================== */
 const BASE_KEYCHAIN_URL = '/images/llavero-base.png'
 const CANVAS = { W: 680, H: 680 }
-// círculo de trabajo (centro y radio relativos al canvas)
 const CIRCLE = { cx: 0.5, cy: 0.58, r: 0.30 }
 const NORMAL_SIDE_FACTOR = 0.85
 const MIN_SCALE = 0.1
@@ -317,6 +329,12 @@ const params = new URLSearchParams(globalThis.location?.search || '')
 const carritoItemId = Number(params.get('itemId') || '1')
 const lado = ref<'A' | 'B'>('A')
 const personalizationId = ref<number | null>(null)
+
+/* NUEVO: folio desde query o localStorage */
+const folio = (params.get('folio') || localStorage.getItem('folio') || '').trim()
+if (params.get('folio')) {
+  localStorage.setItem('folio', folio)
+}
 
 const layers = ref<any[]>([])
 const err = ref(''); const showSnack = ref(false)
@@ -504,7 +522,6 @@ async function ensurePersonalization() {
   if (isBusy.value) return
   isBusy.value = true
   try {
-    // estos GET/POST usan tu wrapper ../lib/api (que ya debería apuntar a VITE_API_URL)
     const r = await post(`/api/local/personalizations`, { carritoItemId, lado: lado.value })
     personalizationId.value = r.id
     await loadLayers(true)
@@ -579,6 +596,8 @@ async function uploadFile(f: File) {
     const fd = new FormData()
     fd.append('personalizationId', String(personalizationId.value))
     fd.append('lado', String(lado.value))
+    // NUEVO: si hay folio, mandarlo para guardar en /uploads/orders/{folio}
+    if (folio) fd.append('folio', folio)
     fd.append('file', f)
 
     let resp = await fetch(`${API_BASE}/api/local/uploads`, { method: 'POST', body: fd })
@@ -1004,50 +1023,21 @@ defineExpose({ MIN_SCALE })
     0 2px 10px rgba(0, 0, 0, 0.04),
     0 8px 24px rgba(0, 0, 0, 0.06);
 }
-
-.section-title {
-  font-weight: 600;
-  font-size: 0.9rem;
-  margin-bottom: 8px;
-}
-
+.section-title { font-weight: 600; font-size: 0.9rem; margin-bottom: 8px; }
 .preview-wrap {
   position: relative;
   width: 100%;
   aspect-ratio: 1 / 1;
   border-radius: 18px;
   border: 1px dashed #e5e7eb;
-  background:
-    radial-gradient(ellipse at center, #0f172a 0%, #0b0f19 65%, #0b0f19 100%);
+  background: radial-gradient(ellipse at center, #0f172a 0%, #0b0f19 65%, #0b0f19 100%);
   overflow: hidden;
 }
-
-.preview-wrap.is-dropping {
-  border-color: #4f46e5;
-  background: rgba(79, 70, 229, 0.06);
-}
-
-.preview-canvas {
-  width: 100%;
-  height: 100%;
-  display: block;
-  user-select: none;
-  touch-action: none;
-  cursor: grab;
-}
-
-.preview-canvas:active {
-  cursor: grabbing;
-}
-
+.preview-wrap.is-dropping { border-color: #4f46e5; background: rgba(79, 70, 229, 0.06); }
+.preview-canvas { width: 100%; height: 100%; display: block; user-select: none; touch-action: none; cursor: grab; }
+.preview-canvas:active { cursor: grabbing; }
 .drop-hint {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  text-align: center;
-  color: #d7e1f0;
-  font-weight: 600;
-  backdrop-filter: blur(1px);
+  position: absolute; inset: 0; display: grid; place-items: center;
+  text-align: center; color: #d7e1f0; font-weight: 600; backdrop-filter: blur(1px);
 }
 </style>

@@ -177,22 +177,17 @@ const canSubmit = computed(() =>
 
 /* ================== utils ================== */
 function isValidEmail(s: string): boolean {
-  // validación simple/rápida
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim())
 }
 function ensureEmail(): Promise<void> {
   return new Promise((resolve, reject) => {
     if (userEmail.value && isValidEmail(userEmail.value)) {
-      console.log('[receipt-email] usando correo de localStorage:', userEmail.value)
       return resolve()
     }
-    // Pedirlo en diálogo
     emailInput.value = userEmail.value || ''
     nicknameInput.value = userNickname.value || ''
     emailError.value = ''
     showEmailDialog.value = true
-
-    // Esperar a que el usuario confirme/cancele
     const check = setInterval(() => {
       if (!showEmailDialog.value) {
         clearInterval(check)
@@ -204,39 +199,22 @@ function ensureEmail(): Promise<void> {
 }
 function confirmEmail() {
   const e = (emailInput.value || '').trim()
-  if (!isValidEmail(e)) {
-    emailError.value = 'Ingresa un correo válido'
-    return
-  }
+  if (!isValidEmail(e)) { emailError.value = 'Ingresa un correo válido'; return }
   emailError.value = ''
   userEmail.value = e
   localStorage.setItem('userEmail', e)
-
   const nn = (nicknameInput.value || '').trim()
-  if (nn) {
-    userNickname.value = nn
-    localStorage.setItem('userNickname', nn)
-  }
-  console.log('[receipt-email] correo/nickname guardados:', userEmail.value, userNickname.value)
+  if (nn) { userNickname.value = nn; localStorage.setItem('userNickname', nn) }
   showEmailDialog.value = false
 }
-function cancelEmail() {
-  emailError.value = ''
-  showEmailDialog.value = false
-}
+function cancelEmail() { emailError.value = ''; showEmailDialog.value = false }
 
 /* ================== cargas ================== */
 async function loadAreas() {
   loadingAreas.value = true
-  try {
-    areas.value = await get('/api/Local/areas')
-  } catch (e) {
-    console.error('Error cargando áreas:', e)
-    areas.value = []
-    alert('No se pudieron cargar las áreas de entrega (falta endpoint en API).')
-  } finally {
-    loadingAreas.value = false
-  }
+  try { areas.value = await get('/api/Local/areas') }
+  catch { areas.value = []; alert('No se pudieron cargar las áreas de entrega.') }
+  finally { loadingAreas.value = false }
 }
 
 async function loadPuntos() {
@@ -246,13 +224,9 @@ async function loadPuntos() {
   try {
     const q = encodeURIComponent(String(form.value.areaId))
     puntos.value = await get(`/api/Local/puntos?areaId=${q}`)
-  } catch (e) {
-    console.error('Error cargando puntos:', e)
-    puntos.value = []
-    alert('No se pudieron cargar los puntos de entrega (falta endpoint en API).')
-  } finally {
-    loadingPuntos.value = false
-  }
+  } catch {
+    puntos.value = []; alert('No se pudieron cargar los puntos de entrega.')
+  } finally { loadingPuntos.value = false }
 }
 
 async function loadPreview() {
@@ -260,10 +234,8 @@ async function loadPreview() {
     const q = encodeURIComponent(String(userId.value))
     const r: PreviewResp = await get(`/api/Local/cart?usuarioId=${q}`)
     items.value = r?.items || []
-  } catch (e) {
-    console.error('Error cargando preview del carrito:', e)
-    items.value = []
-    alert('No se pudo cargar el resumen del carrito.')
+  } catch {
+    items.value = []; alert('No se pudo cargar el resumen del carrito.')
   }
 }
 
@@ -288,14 +260,23 @@ async function submitCheckout() {
     const r: CheckoutResp = await post('/api/local/checkout', payload)
     result.value = r
     showResult.value = true
-    console.log('[checkout] ok', r)
 
-    // 2) Primer folio
+    // 2) Tomar el primer folio (puedes iterar todos si quieres)
     const folio = r?.ordenes?.[0]?.folio
-    console.log('[checkout] folio', folio)
 
-    // 3) Antes de enviar constancia, garantizar correo
+    // 3) Garantizar correo
     await ensureEmail()
+
+    // 3.5) **Construir base64 y copiar a columnas de `ordenes`**
+    if (folio) {
+      const folioSafe = encodeURIComponent(folio)
+      try {
+        await post(`/api/local/orders/${folioSafe}/images-b64/rebuild?copyToOrdenes=1`, {})
+        console.log('[oib64->ordenes] columnas imagenA_*/imagenB_* pobladas')
+      } catch (e) {
+        console.warn('[oib64->ordenes] no se pudo copiar a columnas (ignorado)', e)
+      }
+    }
 
     // 4) Enviar constancia por correo (PDF con QR)
     if (folio) {
@@ -304,27 +285,23 @@ async function submitCheckout() {
         cantidad: it.cantidad,
         precioUnitario: it.precio_unitario
       }))
-
       try {
-        const resp = await post('/api/orders/receipt-email', {
+        await post('/api/orders/receipt-email', {
           email: userEmail.value,
           nickname: userNickname.value || 'cliente',
           folio,
           total: total.value,
           items: itemsForReceipt
         })
-        console.log('[receipt-email] ok', resp)
-      } catch (mailErr:any) {
-        console.error('[receipt-email] fail', mailErr)
-        alert('No se pudo enviar la constancia por correo. Revisa la consola para más detalles.')
+      } catch {
+        alert('No se pudo enviar la constancia por correo.')
       }
 
       // 5) Redirigir a tracking
       showResult.value = false
       router.push(`/tracking/${folio}`)
     }
-  } catch (e:any) {
-    console.error('[checkout] fail', e)
+  } catch {
     alert('No se pudo completar el checkout.')
   } finally {
     submitting.value = false
@@ -342,12 +319,7 @@ onMounted(async () => {
     router.push('/login')
     return
   }
-  try {
-    await Promise.all([loadAreas(), loadPreview()])
-  } catch (err) {
-    console.error('Error inicial en checkout:', err)
-  } finally {
-    ready.value = true
-  }
+  try { await Promise.all([loadAreas(), loadPreview()]) }
+  finally { ready.value = true }
 })
 </script>

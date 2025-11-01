@@ -120,6 +120,15 @@ function fmt(n: number) {
   return toNum(n).toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+/* === NUEVO: asegura que exista draftItem:<uid> para que el checkout
+       pueda usarlo como fallback de personalizaciones === */
+function ensureDraftId() {
+  const key = `draftItem:${usuarioId}`
+  if (!localStorage.getItem(key)) {
+    localStorage.setItem(key, String(Date.now()))
+  }
+}
+
 async function ensureItemObjetivo() {
   // Intenta crear el ítem de producto 3 en el carrito del usuario
   try {
@@ -143,8 +152,9 @@ async function ensureItemObjetivo() {
 async function load() {
   error.value = ''
   try {
+    // ⬇️ Usa el preview del backend nuevo
     const r = await get<{ carritoId?: number; items: Item[]; total: number }>(
-      `/api/local/cart?usuarioId=${usuarioId}`
+      `/api/local/cart/preview?usuarioId=${usuarioId}`
     )
     const all = Array.isArray(r.items) ? r.items : []
 
@@ -153,7 +163,7 @@ async function load() {
     // Si no está, créalo y vuelve a cargar una vez
     if (!filtered.length) {
       await ensureItemObjetivo()
-      const r2 = await get<{ items: Item[]; total: number }>(`/api/local/cart?usuarioId=${usuarioId}`)
+      const r2 = await get<{ items: Item[]; total: number }>(`/api/local/cart/preview?usuarioId=${usuarioId}`)
       filtered = (r2.items || []).filter(it => toNum(it.producto_id) === OBJETIVO_PRODUCTO_ID)
     }
 
@@ -165,6 +175,12 @@ async function load() {
 
     qtyDraft.value = {}
     for (const it of items.value) qtyDraft.value[it.id] = it.cantidad
+
+    /* === NUEVO: guarda el último carrito_item.id encontrado para este usuario
+           (útil para depurar o si quieres mostrarlo en el checkout) === */
+    if (items.value.length) {
+      localStorage.setItem(`lastItemId:${usuarioId}`, String(items.value[0].id))
+    }
   } catch (e: any) {
     error.value = e?.message || 'Error cargando carrito'
   }
@@ -204,7 +220,10 @@ async function removeItem(it: Item) {
   }
 }
 
-onMounted(load)
+onMounted(async () => {
+  ensureDraftId()
+  await load()
+})
 </script>
 
 <style scoped>

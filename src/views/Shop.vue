@@ -195,12 +195,13 @@
 
                 <v-divider class="my-4" />
 
-                <!-- Info + estado (sin botón de carrito) -->
+                <!-- Info + estado -->
                 <v-alert type="info" variant="tonal" class="mb-3">
                   Debes subir una foto para el <b>lado A</b> y otra para el <b>lado B</b>.
                 </v-alert>
                 <div class="text-caption">
                   Estado: Lado A {{ hasPhotoA ? '✓' : '✗' }} · Lado B {{ hasPhotoB ? '✓' : '✗' }}
+                  <div v-if="imagenB64Id" class="mt-1">ID conjunto (imagenes_b64): <b>{{ imagenB64Id }}</b></div>
                 </div>
               </v-card-text>
             </v-card>
@@ -234,6 +235,9 @@ import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { get, post } from '../lib/api'
 
+/* ======== GUARDADO DIRECTO: compras.imagenes_b64 ======== */
+const USE_SIMPLE_B64 = true // base64 directo en imagenes_b64
+
 /* ===== Drawer / Topbar ===== */
 const drawer = ref(false)
 function toggleDrawer() { drawer.value = !drawer.value }
@@ -253,17 +257,18 @@ const initials = computed(() => {
 })
 function readAuthFromStorage() { userId.value = Number(localStorage.getItem('userId') || '0') }
 function logout() {
-  // limpia estado por-usuario para evitar reuso accidental
   const uid = userId.value
   if (uid) {
     localStorage.removeItem(`draftItem:${uid}`)
     localStorage.removeItem(`lastItemId:${uid}`)
+    localStorage.removeItem(b64Key(uid, carritoItemId.value))
   }
   imageCache.clear()
   allLayers.value = []
   personalizationId.value = null
   imageUrlInput.value = ''
   lado.value = 'A'
+  imagenB64Id.value = null
 
   localStorage.removeItem('userId')
   localStorage.removeItem('nickname')
@@ -327,6 +332,37 @@ function ensureCartItemId() {
   carritoItemId.value = v
 }
 
+/* ====== ID del par en imagenes_b64 (A+B) ====== */
+const imagenB64Id = ref<number | null>(null)
+function b64Key(uid: number, cartId: number) { return `b64pairId:${uid}:${cartId}` }
+function loadB64IdFromStorage() {
+  const uid = requireUserId()
+  const raw = Number(localStorage.getItem(b64Key(uid, carritoItemId.value)) || '0')
+  imagenB64Id.value = raw || null
+}
+function persistB64Id(id: number) {
+  const uid = requireUserId()
+  localStorage.setItem(b64Key(uid, carritoItemId.value), String(id))
+  imagenB64Id.value = id
+}
+
+/* === Exponer helpers globales para el checkout (otro view) === */
+;(window as any).getCurrentB64Id = () => imagenB64Id.value
+;(window as any).linkB64ToOrder = async (orderId: number, orderItemId?: number | null) => {
+  if (!imagenB64Id.value) return { ok: false, message: 'No hay imagenes_b64 id' }
+  try {
+    const res = await post(`/api/imagenes-b64/${imagenB64Id.value}/link-order`, {
+      ordenId: orderId,
+      ordenItemId: orderItemId ?? null
+    })
+    toast(`Imágenes vinculadas a la orden #${orderId}`, 'success')
+    return { ok: true, res }
+  } catch (e: any) {
+    toast(getMsg(e), 'error')
+    return { ok: false, message: getMsg(e) }
+  }
+}
+
 const lado = ref<'A' | 'B'>('A')
 const personalizationId = ref<number | null>(null)
 
@@ -380,7 +416,20 @@ function resolveLayerUrl(raw?: string | null) {
 function circlePx(W: number, H: number) { const r = Math.min(W, H) * CIRCLE.r; return { cx: W * CIRCLE.cx, cy: H * CIRCLE.cy, r } }
 function sameId(a: unknown, b: unknown) { if (a == null || b == null) return false; return String(a) === String(b) }
 
-/* ===== Persistencia mínima ===== */
+/* ======= Guardado directo en imagenes_b64 ======= */
+async function saveToImagenesB64(side: 'A'|'B', dataUrl: string) {
+  const uid = requireUserId();              // <— OBLIGATORIO
+  const body: any = { lado: side, dataUrl, usuarioId: uid };
+  if (imagenB64Id.value) body.id = imagenB64Id.value;
+
+  const resp = await post('/api/imagenes-b64', body) as any;
+  const newId = Number(resp?.id || 0);
+  if (newId && !imagenB64Id.value) persistB64Id(newId);
+  return resp;
+}
+
+
+/* ===== Persistencia mínima (legacy) ===== */
 async function ensurePersonalization() {
   if (isBusy.value) return
   isBusy.value = true
@@ -430,7 +479,7 @@ async function loadLayers(preferFull = true) {
   } catch (e: any) { toast(getMsg(e) || 'No se pudieron cargar las capas') }
 }
 
-/* ===== Borrado remoto ===== */
+/* ===== Borrado remoto (legacy) ===== */
 async function deletePhotoLayerRemote(layerId: number) {
   if (!personalizationId.value) return
   try { await post(`/api/local/personalizations/${personalizationId.value}/layers/${layerId}/delete`, {}) }
@@ -498,30 +547,22 @@ async function uploadFile(f: File) {
     await loadImage(dataUrl)
     scheduleRender()
 
-    const fd = new FormData()
-    fd.append('personalizationId', String(personalizationId.value))
-    fd.append('lado', String(side))
-    fd.append('file', f)
+    /* ====== Guardar directo en la BD imagenes_b64 con MISMO id ====== */
+    if (USE_SIMPLE_B64) {
+      await saveToImagenesB64(side, dataUrl)
+      // Consolidar capa local y salir
+      allLayers.value = allLayers.value.filter(l => l.id !== tempId).concat([{
+        ...tempLayer,
+        id: Date.now(), // pseudo-id local
+      }])
+      scheduleRender()
+      toast(`Imagen lado ${side} guardada en la BD (imagenes_b64)`, 'success')
+      uploading.value = false
+      return
+    }
 
-    let resp = await fetch(`${API_BASE}/api/local/uploads`, { method: 'POST', body: fd })
-    if (!resp.ok && resp.status === 404) resp = await fetch(`${API_BASE}/api/uploads`, { method: 'POST', body: fd })
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
-    const up = await resp.json()
-
-    await post(`/api/local/personalizations/${personalizationId.value}/layers`, {
-      tipo_capa: 'foto',
-      lado: side,
-      archivo_id: up.archivoId ?? null,
-      url: up.url ?? null,
-      z_index: 5,
-      pos_x: 0.5,
-      pos_y: 0.58,
-      escala: 1,
-      rotacion: 0,
-    })
-
+    /* ====== Legacy /uploads (no usado en este flujo) ====== */
     allLayers.value = allLayers.value.filter(l => l.id !== tempId)
-    await loadLayers(true)
     toast('Imagen cargada', 'success')
   } catch (e: any) {
     allLayers.value = allLayers.value.filter(l => l.id !== tempId)
@@ -630,6 +671,10 @@ onMounted(async () => {
   await cargarPerfil()
   await nextTick()
   loadImage(BASE_KEYCHAIN_URL).finally(() => scheduleRender())
+
+  // cargar id del par A+B (si ya existía para este carrito)
+  loadB64IdFromStorage()
+
   await ensurePersonalization()
 })
 onUnmounted(() => {
@@ -669,7 +714,6 @@ watch(lado, async () => { await ensurePersonalization() })
   background: linear-gradient(180deg, #fff 0%, #f7f7fb 100%);
   box-shadow: 0 30px 50px -40px rgba(0, 0, 0, 0.35); isolation: isolate;
 }
-/* Evitar que capas decorativas capturen clics encima del topbar */
 .hero-sheen,
 .hero-waves,
 .hero-waves * { pointer-events: none; }

@@ -101,7 +101,7 @@
           <div v-else class="orders-grid">
             <div
               v-for="order in pendingOrders"
-              :key="order.folio"
+              :key="order.id || order.folio"
               class="order-card"
               @click="selectOrder(order)"
             >
@@ -293,8 +293,7 @@
 
 <script>
 import { ref, onMounted } from 'vue'
-// si tienes alias @ funcionando, puedes usar "@/lib/api"
-import { get, post } from '../lib/api'
+import { get /*, post */ } from '../lib/api'
 
 export default {
   name: 'OperadorView',
@@ -310,44 +309,60 @@ export default {
     const loading = ref(false)
     const error = ref(null)
 
-    const API_BASE = (import.meta.env.VITE_API_BASE || '').replace(/\/+$/, '')
-    const IMG_PLACEHOLDER = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width=\"300\" height=\"300\"><rect width=\"100%\" height=\"100%\" fill=\"#1a1f26\"/><text x=\"50%\" y=\"50%\" fill=\"#4fd1c5\" font-size=\"16\" text-anchor=\"middle\">Sin imagen</text></svg>'
+    // Usa la misma base que el resto del front
+    const API_BASE = (import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE || '').replace(/\/+$/, '')
+
+    // placeholder y normalizador (soporta data:)
+    const IMG_PLACEHOLDER =
+      'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><rect width="100%" height="100%" fill="#1a1f26"/><text x="50%" y="50%" fill="#4fd1c5" font-size="16" text-anchor="middle">Sin imagen</text></svg>'
 
     const urlFor = (p) => {
       if (!p) return IMG_PLACEHOLDER
+      if (p.startsWith('data:')) return p // << importante para base64
       if (p.startsWith('http://') || p.startsWith('https://')) return p
-      if (!API_BASE) return p // fallback relativo (dev local)
-      // asegura prefijo /
-      const clean = p.startsWith('/') ? p : ('/' + p)
+      if (!API_BASE) return p
+      const clean = p.startsWith('/') ? p : '/' + p
       return API_BASE + clean
     }
 
-    const onImgError = (ev) => {
-      ev.target.src = IMG_PLACEHOLDER
-    }
+    const onImgError = (ev) => { ev.target.src = IMG_PLACEHOLDER }
 
+    // La API de operador debe devolver al menos: id (orden_id), folio, customerName...
     const mapCard = (row) => {
-      // el backend devuelve: folio, customerName, nfcType, nfcData, imageA, imageB
+      const orderId = row?.id ?? row?.ordenId ?? row?.orderId ?? null
       const name = row?.customerName && row.customerName.trim() !== '' ? row.customerName : 'Cliente'
-      const folio = row?.folio || 'SIN-FOLIO'
+      const folio = row?.folio || (orderId ? String(orderId) : 'SIN-FOLIO')
+
+      // imágenes inicialmente vacías; se hidratan con /imagenes-b64/by-order
       return {
-        // Para no romper nada que use "id", igualamos id=folio
-        id: folio,
-        folio,
+        id: orderId,               // <— numérico si viene
+        folio,                     // <— visible para el operador
         customerName: name,
         nfcType: row?.nfcType || 'Link',
         nfcData: row?.nfcData || '',
-        imageA: urlFor(row?.imageA),
-        imageB: urlFor(row?.imageB),
+        imageA: IMG_PLACEHOLDER,
+        imageB: IMG_PLACEHOLDER,
         status: 'pending'
       }
     }
 
+    // Obtiene órdenes para operador
     const fetchOperatorOrders = async (estado = 'CRE', limit = 50) => {
-      // tu wrapper get ya imprime logs [api:...]
-      // usa ruta absoluta al backend expuesto
-      const params = { estado, limit }
-      return await get('/api/operator/orders', { params })
+      return await get('/api/operator/orders', { params: { estado, limit } })
+    }
+
+    // Hidrata imágenes A/B desde imagenes_b64 por orden
+    const hydrateImagesForCard = async (card) => {
+      try {
+        if (!card?.id || isNaN(Number(card.id))) return // requiere orden_id
+        const r = await get(`/api/imagenes-b64/by-order/${card.id}`)
+        if (r && (r.ladoA_b64 || r.ladoB_b64)) {
+          card.imageA = urlFor(r.ladoA_b64 || card.imageA)
+          card.imageB = urlFor(r.ladoB_b64 || card.imageB)
+        }
+      } catch (e) {
+        // silencioso; dejamos placeholder
+      }
     }
 
     const loadOrders = async () => {
@@ -355,11 +370,13 @@ export default {
       error.value = null
       try {
         const resp = await fetchOperatorOrders('CRE', 50)
-        console.log('[operador] payload', resp)
         const arr = Array.isArray(resp?.items) ? resp.items : []
-        pendingOrders.value = arr.map(mapCard)
+        const cards = arr.map(mapCard)
+        pendingOrders.value = cards
+
+        // Hidratación paralela (no bloquea la UI)
+        await Promise.all(cards.map(hydrateImagesForCard))
       } catch (e) {
-        console.error(e)
         error.value = 'No se pudieron cargar las órdenes.'
       } finally {
         loading.value = false
@@ -374,10 +391,13 @@ export default {
       }
     }
 
-    const selectOrder = (order) => {
+    const selectOrder = async (order) => {
       selectedOrder.value = { ...order }
       currentView.value = 'processing'
       currentStep.value = 1
+
+      // Asegura imágenes por si la tarjeta no estaba hidratada aún
+      await hydrateImagesForCard(selectedOrder.value)
     }
 
     const backToMenu = () => {
@@ -427,7 +447,7 @@ export default {
 
     const finishOrder = () => {
       updateOrderStatus('ready_for_delivery')
-      const idx = pendingOrders.value.findIndex(o => o.folio === selectedOrder.value.folio)
+      const idx = pendingOrders.value.findIndex(o => (o.id || o.folio) === (selectedOrder.value.id || selectedOrder.value.folio))
       if (idx > -1) pendingOrders.value.splice(idx, 1)
       processingOrders.value.push(selectedOrder.value)
       completedToday.value++
@@ -439,7 +459,7 @@ export default {
 
     const updateOrderStatus = (status) => {
       console.log(`[operador] actualizar estado ${selectedOrder.value?.folio} -> ${status}`)
-      // Aquí puedes llamar a tu API si decides persistir el paso a paso
+      // Si decides persistir, aquí iría el POST a tu API.
       // await post(`/api/operator/orders/${selectedOrder.value.id}/advance`, { to: 'PROC' })
     }
 
