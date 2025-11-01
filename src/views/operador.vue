@@ -1,4 +1,4 @@
-<!-- src/views/Operador.vue  (o /operador/index.vue si lo tienes así) -->
+<!-- src/views/Operador.vue -->
 <template>
   <div class="operador-container">
     <!-- Header -->
@@ -219,7 +219,7 @@
               <div class="nfc-info">
                 <p><strong>Tipo:</strong> {{ selectedOrder.nfcType }}</p>
 
-                <!-- >>> CAMBIO: Bloque de Datos con input readonly + copiar y link si es URL -->
+                <!-- Bloque de Datos con input readonly + copiar y link si es URL -->
                 <div class="nfc-data">
                   <label>Datos a programar</label>
                   <div class="nfc-data-row">
@@ -238,7 +238,6 @@
                     Abrir enlace
                   </a>
                 </div>
-                <!-- <<< FIN CAMBIO -->
               </div>
 
               <div class="nfc-programming">
@@ -250,10 +249,17 @@
                     <path d="M16.37 2a20.16 20.16 0 0 1 0 20"/>
                   </svg>
                 </div>
-                <button @click="programNFC" class="btn-action" :disabled="programming">
+                <button
+                  @click="programNFC"
+                  class="btn-action"
+                  :disabled="programming || !nfcSupported || !selectedOrder?.nfcData"
+                >
                   <div v-if="programming" class="spinner"></div>
                   {{ programming ? 'Programando...' : 'Programar NFC' }}
                 </button>
+                <p v-if="!nfcSupported" class="nfc-warning">
+                  Web NFC no disponible. Usa <b>Chrome en Android</b> y abre esta página por <b>HTTPS</b>.
+                </p>
               </div>
             </div>
           </div>
@@ -360,7 +366,7 @@ export default {
         folio,
         customerName: name,
         nfcType: row?.nfcType || 'Link',
-        nfcData: row?.nfcData || '',  // <<< viene del backend (url_general o qr_texto)
+        nfcData: row?.nfcData || '',  // viene del backend (url_general o qr_texto)
         imageA: urlFor(row?.imageA) || IMG_PLACEHOLDER,
         imageB: urlFor(row?.imageB) || IMG_PLACEHOLDER,
         status: 'pending'
@@ -371,20 +377,19 @@ export default {
       return await get('/api/operator/orders', { params: { estado, limit } })
     }
 
-const hydrateImagesForCard = async (card) => {
-  try {
-    if (!card?.id || isNaN(Number(card.id))) return
-    const r = await get(`/api/imagenes-b64/by-order/${card.id}`)
-    if (r) {
-      if (r.ladoA_b64) card.imageA = urlFor(r.ladoA_b64)
-      if (r.ladoB_b64) card.imageB = urlFor(r.ladoB_b64)
-      if (r.url_general && String(r.url_general).trim() !== '') {
-        card.nfcData = String(r.url_general).trim()   // <<< prioriza url_general
-      }
+    const hydrateImagesForCard = async (card) => {
+      try {
+        if (!card?.id || isNaN(Number(card.id))) return
+        const r = await get(`/api/imagenes-b64/by-order/${card.id}`)
+        if (r) {
+          if (r.ladoA_b64) card.imageA = urlFor(r.ladoA_b64)
+          if (r.ladoB_b64) card.imageB = urlFor(r.ladoB_b64)
+          if (r.url_general && String(r.url_general).trim() !== '') {
+            card.nfcData = String(r.url_general).trim()   // prioriza url_general
+          }
+        }
+      } catch { /* silencioso */ }
     }
-  } catch { /* silencioso */ }
-}
-
 
     const loadOrders = async () => {
       loading.value = true
@@ -424,6 +429,9 @@ const hydrateImagesForCard = async (card) => {
       currentStep.value = 1
     }
 
+    // --- Web NFC: soporte en navegador
+    const nfcSupported = ('NDEFReader' in window)
+
     // Abrir /impresion en nueva pestaña y saltar a Paso 2
     const sendToPrint = async () => {
       if (!selectedOrder.value) return
@@ -451,12 +459,45 @@ const hydrateImagesForCard = async (card) => {
       }
     }
 
+    // --- Web NFC: escribir link/texto a la etiqueta
     const programNFC = async () => {
+      const data = (selectedOrder.value?.nfcData || '').trim()
+      if (!data) {
+        alert('No hay datos para programar')
+        return
+      }
+
       programming.value = true
-      await new Promise(r => setTimeout(r, 1800))
-      programming.value = false
-      currentStep.value = 4
-      updateOrderStatus('nfc_programming')
+      try {
+        if (!('NDEFReader' in window)) {
+          throw new Error('Web NFC no disponible. Usa Chrome en Android y abre el sitio por HTTPS.')
+        }
+
+        // Nota de tamaño típico NTAG213 (~144 bytes)
+        if (isLikelyUrl(data)) {
+          const bytes = new TextEncoder().encode(data).length
+          if (bytes > 130) {
+            console.warn('La URL podría ser grande para una NTAG213. Considera acortarla.')
+          }
+        }
+
+        const ndef = new NDEFReader()
+        const msg = isLikelyUrl(data)
+          ? { records: [{ recordType: 'url', data }] }
+          : { records: [{ recordType: 'text', data, lang: 'es' }] }
+
+        await ndef.write(msg) // El navegador pedirá acercar la etiqueta
+
+        currentStep.value = 4
+        updateOrderStatus('nfc_programming_ok')
+        alert('✓ Etiqueta programada correctamente')
+      } catch (e) {
+        console.error(e)
+        updateOrderStatus('nfc_programming_error')
+        alert('No se pudo programar la etiqueta: ' + (e?.message || e))
+      } finally {
+        programming.value = false
+      }
     }
 
     const validateNFC = (isGood) => {
@@ -495,7 +536,6 @@ const hydrateImagesForCard = async (card) => {
         await navigator.clipboard.writeText(text)
         alert('Datos copiados al portapapeles')
       } catch {
-        // fallback simple
         const ta = document.createElement('textarea')
         ta.value = text
         document.body.appendChild(ta)
@@ -536,7 +576,8 @@ const hydrateImagesForCard = async (card) => {
       pendingOrders, processingOrders, loading, error,
       reload, logout, selectOrder, backToMenu,
       sendToPrint, validateQuality, programNFC, validateNFC, finishOrder,
-      onImgError, copyNfcData, isLikelyUrl
+      onImgError, copyNfcData, isLikelyUrl,
+      nfcSupported
     }
   }
 }
@@ -639,6 +680,7 @@ const hydrateImagesForCard = async (card) => {
 .btn-copy { padding: .6rem .9rem; border-radius: 8px; border: 1px solid rgba(79, 209, 197, 0.4); background: rgba(79, 209, 197, 0.15); color: #4fd1c5; cursor: pointer; }
 .btn-copy:disabled { opacity: .6; cursor: not-allowed; }
 .nfc-link { display: inline-block; margin-top: 6px; color: #93f2ff; text-decoration: underline; }
+.nfc-warning { margin-top: .6rem; color: #fbbf24; font-size: .9rem; }
 
 /* Responsive */
 @media (max-width: 768px) {
