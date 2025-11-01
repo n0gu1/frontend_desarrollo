@@ -181,9 +181,9 @@
                   También puedes <b>arrastrar y soltar</b> una imagen sobre la vista previa.
                 </div>
 
-                <!-- Campo URL (no asociado a A/B) -->
+                <!-- Campo URL sin lado (guarda en url_general) -->
                 <v-divider class="my-4" />
-                <div class="section-title">URL (solo campo, sin acción)</div>
+                <div class="section-title">URL general (sin lado)</div>
                 <v-text-field
                   v-model="imageUrlInput"
                   placeholder="https://ejemplo.com/imagen.jpg o /uploads/archivo.png"
@@ -191,7 +191,23 @@
                   density="comfortable"
                   variant="solo-filled"
                   hide-details
+                  @keyup.enter="saveGeneralUrl"
                 />
+                <div class="d-flex ga-2 mt-2">
+                  <v-btn
+                    color="primary"
+                    variant="flat"
+                    prepend-icon="mdi-content-save"
+                    :loading="urlSaving"
+                    :disabled="urlSaving || !canSaveUrl"
+                    @click="saveGeneralUrl"
+                  >
+                    Guardar URL
+                  </v-btn>
+                  <v-chip v-if="urlSavedAt" size="small" color="success" variant="tonal">
+                    ✓ URL guardada
+                  </v-chip>
+                </div>
 
                 <v-divider class="my-4" />
 
@@ -202,6 +218,9 @@
                 <div class="text-caption">
                   Estado: Lado A {{ hasPhotoA ? '✓' : '✗' }} · Lado B {{ hasPhotoB ? '✓' : '✗' }}
                   <div v-if="imagenB64Id" class="mt-1">ID conjunto (imagenes_b64): <b>{{ imagenB64Id }}</b></div>
+                  <div v-if="storedUrlPreview" class="mt-1">
+                    URL almacenada: <span class="break-all">{{ storedUrlPreview }}</span>
+                  </div>
                 </div>
               </v-card-text>
             </v-card>
@@ -269,6 +288,7 @@ function logout() {
   imageUrlInput.value = ''
   lado.value = 'A'
   imagenB64Id.value = null
+  storedUrlPreview.value = ''
 
   localStorage.removeItem('userId')
   localStorage.removeItem('nickname')
@@ -332,7 +352,7 @@ function ensureCartItemId() {
   carritoItemId.value = v
 }
 
-/* ====== ID del par en imagenes_b64 (A+B) ====== */
+/* ====== ID del par en imagenes_b64 (A+B o solo URL) ====== */
 const imagenB64Id = ref<number | null>(null)
 function b64Key(uid: number, cartId: number) { return `b64pairId:${uid}:${cartId}` }
 function loadB64IdFromStorage() {
@@ -369,8 +389,17 @@ const personalizationId = ref<number | null>(null)
 // Capas (solo usamos tipo 'foto')
 const allLayers = ref<any[]>([])
 
-/* Campo URL (solo visual) */
+/* Campo URL general (sin lado) */
 const imageUrlInput = ref('')
+const urlSaving = ref(false)
+const urlSavedAt = ref<number | null>(null)
+const storedUrlPreview = ref('')
+
+const canSaveUrl = computed(() => {
+  // Permitimos guardar siempre que el usuario esté autenticado.
+  // El backend puede crear la fila aunque no tengamos id actual.
+  return !!hasUser.value
+})
 
 const err = ref(''); const showSnack = ref(false); const snackColor = ref<'error'|'success'|'info'>('error')
 const canvasRef = ref<HTMLCanvasElement | null>(null)
@@ -428,6 +457,31 @@ async function saveToImagenesB64(side: 'A'|'B', dataUrl: string) {
   return resp;
 }
 
+/* ====== Guardar URL general (sin lado) en url_general ====== */
+async function saveGeneralUrl() {
+  if (urlSaving.value) return
+  const uid = requireUserId()
+  urlSaving.value = true
+  try {
+    const body: any = {
+      usuarioId: uid,
+      urlGeneral: (imageUrlInput.value ?? '').trim()
+    }
+    if (imagenB64Id.value) body.id = imagenB64Id.value
+
+    const resp = await post('/api/imagenes-b64', body) as any
+    const newId = Number(resp?.id || 0)
+    if (newId && !imagenB64Id.value) persistB64Id(newId)
+
+    storedUrlPreview.value = imageUrlInput.value.trim()
+    urlSavedAt.value = Date.now()
+    toast('URL general guardada en la BD (imagenes_b64.url_general)', 'success')
+  } catch (e: any) {
+    toast(getMsg(e), 'error')
+  } finally {
+    urlSaving.value = false
+  }
+}
 
 /* ===== Persistencia mínima (legacy) ===== */
 async function ensurePersonalization() {
@@ -659,6 +713,19 @@ function renderPreview() {
   ctx.restore()
 }
 
+/* ===== Cargar URL almacenada si ya existe un id ===== */
+async function loadStoredUrlIfAny() {
+  try {
+    if (!imagenB64Id.value) return
+    const row = await get<any>(`/api/imagenes-b64/${imagenB64Id.value}`)
+    const u = String(row?.url_general || '').trim()
+    if (u) {
+      storedUrlPreview.value = u
+      imageUrlInput.value = u
+    }
+  } catch { /* opcionalmente ignoramos */ }
+}
+
 /* ===== Lifecycle ===== */
 onMounted(async () => {
   readAuthFromStorage()
@@ -672,8 +739,9 @@ onMounted(async () => {
   await nextTick()
   loadImage(BASE_KEYCHAIN_URL).finally(() => scheduleRender())
 
-  // cargar id del par A+B (si ya existía para este carrito)
+  // cargar id del par A+B/URL (si ya existía para este carrito)
   loadB64IdFromStorage()
+  await loadStoredUrlIfAny()
 
   await ensurePersonalization()
 })
@@ -683,6 +751,11 @@ onUnmounted(() => {
 
 // Cuando cambie el lado, reasegura/recarga
 watch(lado, async () => { await ensurePersonalization() })
+
+// Si más adelante se establece el id (por subir A/B), intentamos traer url_general
+watch(imagenB64Id, async (nv, ov) => {
+  if (nv && nv !== ov) await loadStoredUrlIfAny()
+})
 </script>
 
 <style scoped>
@@ -772,4 +845,7 @@ watch(lado, async () => { await ensurePersonalization() })
   position: absolute; inset: 0; display: grid; place-items: center; text-align: center;
   color: #d7e1f0; font-weight: 600; backdrop-filter: blur(1px);
 }
+
+/* util */
+.break-all { word-break: break-all; }
 </style>

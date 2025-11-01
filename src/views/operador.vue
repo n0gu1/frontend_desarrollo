@@ -1,3 +1,4 @@
+<!-- src/views/Operador.vue  (o /operador/index.vue si lo tienes así) -->
 <template>
   <div class="operador-container">
     <!-- Header -->
@@ -217,8 +218,29 @@
             <div v-if="currentStep === 3" class="step-content">
               <div class="nfc-info">
                 <p><strong>Tipo:</strong> {{ selectedOrder.nfcType }}</p>
-                <p><strong>Datos:</strong> {{ selectedOrder.nfcData }}</p>
+
+                <!-- >>> CAMBIO: Bloque de Datos con input readonly + copiar y link si es URL -->
+                <div class="nfc-data">
+                  <label>Datos a programar</label>
+                  <div class="nfc-data-row">
+                    <input class="nfc-input" :value="selectedOrder?.nfcData || ''" readonly>
+                    <button class="btn-copy" @click="copyNfcData" :disabled="!selectedOrder?.nfcData">
+                      Copiar
+                    </button>
+                  </div>
+                  <a
+                    v-if="isLikelyUrl(selectedOrder?.nfcData)"
+                    :href="selectedOrder.nfcData"
+                    target="_blank"
+                    rel="noopener"
+                    class="nfc-link"
+                  >
+                    Abrir enlace
+                  </a>
+                </div>
+                <!-- <<< FIN CAMBIO -->
               </div>
+
               <div class="nfc-programming">
                 <div class="nfc-icon">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
@@ -338,7 +360,7 @@ export default {
         folio,
         customerName: name,
         nfcType: row?.nfcType || 'Link',
-        nfcData: row?.nfcData || '',
+        nfcData: row?.nfcData || '',  // <<< viene del backend (url_general o qr_texto)
         imageA: urlFor(row?.imageA) || IMG_PLACEHOLDER,
         imageB: urlFor(row?.imageB) || IMG_PLACEHOLDER,
         status: 'pending'
@@ -349,16 +371,20 @@ export default {
       return await get('/api/operator/orders', { params: { estado, limit } })
     }
 
-    const hydrateImagesForCard = async (card) => {
-      try {
-        if (!card?.id || isNaN(Number(card.id))) return
-        const r = await get(`/api/imagenes-b64/by-order/${card.id}`)
-        if (r) {
-          if (r.ladoA_b64) card.imageA = urlFor(r.ladoA_b64)
-          if (r.ladoB_b64) card.imageB = urlFor(r.ladoB_b64)
-        }
-      } catch { /* silencioso */ }
+const hydrateImagesForCard = async (card) => {
+  try {
+    if (!card?.id || isNaN(Number(card.id))) return
+    const r = await get(`/api/imagenes-b64/by-order/${card.id}`)
+    if (r) {
+      if (r.ladoA_b64) card.imageA = urlFor(r.ladoA_b64)
+      if (r.ladoB_b64) card.imageB = urlFor(r.ladoB_b64)
+      if (r.url_general && String(r.url_general).trim() !== '') {
+        card.nfcData = String(r.url_general).trim()   // <<< prioriza url_general
+      }
     }
+  } catch { /* silencioso */ }
+}
+
 
     const loadOrders = async () => {
       loading.value = true
@@ -398,7 +424,7 @@ export default {
       currentStep.value = 1
     }
 
-    // >>> CAMBIO: abrir /impresion en nueva pestaña y saltar a Validación de Calidad (paso 2)
+    // Abrir /impresion en nueva pestaña y saltar a Paso 2
     const sendToPrint = async () => {
       if (!selectedOrder.value) return
       printing.value = true
@@ -409,17 +435,11 @@ export default {
         `&folio=${encodeURIComponent(selectedOrder.value.folio || '')}` +
         `&d=${d}&gap=${gap}&copies=${copies}&labels=${labels}`
 
-      // Abrimos la vista de impresión sin perder esta vista
       window.open(url, '_blank')
-
-      // Pasamos inmediatamente a Validación de Calidad
       currentStep.value = 2
       updateOrderStatus('printed')
-
-      // Quitamos spinner
       printing.value = false
     }
-    // <<< FIN CAMBIO
 
     const validateQuality = (isGood) => {
       if (isGood) {
@@ -467,6 +487,30 @@ export default {
       // await post(`/api/operator/orders/${selectedOrder.value.id}/advance`, { to: 'PROC' })
     }
 
+    // Copiar al portapapeles los datos NFC
+    const copyNfcData = async () => {
+      const text = selectedOrder.value?.nfcData || ''
+      if (!text) return
+      try {
+        await navigator.clipboard.writeText(text)
+        alert('Datos copiados al portapapeles')
+      } catch {
+        // fallback simple
+        const ta = document.createElement('textarea')
+        ta.value = text
+        document.body.appendChild(ta)
+        ta.select()
+        document.execCommand('copy')
+        document.body.removeChild(ta)
+        alert('Datos copiados')
+      }
+    }
+
+    const isLikelyUrl = (s) => {
+      if (!s || typeof s !== 'string') return false
+      return /^https?:\/\//i.test(s)
+    }
+
     // Si volvemos de /impresion con ?step=quality&orderId=..., saltamos al Paso 2
     const tryJumpToQuality = () => {
       const step = route.query.step
@@ -492,7 +536,7 @@ export default {
       pendingOrders, processingOrders, loading, error,
       reload, logout, selectOrder, backToMenu,
       sendToPrint, validateQuality, programNFC, validateNFC, finishOrder,
-      onImgError
+      onImgError, copyNfcData, isLikelyUrl
     }
   }
 }
@@ -586,6 +630,15 @@ export default {
 .spinner { width: 20px; height: 20px; border: 3px solid rgba(15, 20, 25, 0.3); border-top-color: #0f1419; border-radius: 50%; animation: spin 0.8s linear infinite; }
 
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* NFC Data UI */
+.nfc-data { margin: 10px 0 16px; }
+.nfc-data label { display: block; font-size: .95rem; color: #9ca3af; margin-bottom: 6px; }
+.nfc-data-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.nfc-input { width: 100%; padding: .6rem .8rem; border-radius: 8px; border: 1px solid rgba(79, 209, 197, 0.25); background: rgba(20,25,30,.55); color: #e1e8ed; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+.btn-copy { padding: .6rem .9rem; border-radius: 8px; border: 1px solid rgba(79, 209, 197, 0.4); background: rgba(79, 209, 197, 0.15); color: #4fd1c5; cursor: pointer; }
+.btn-copy:disabled { opacity: .6; cursor: not-allowed; }
+.nfc-link { display: inline-block; margin-top: 6px; color: #93f2ff; text-decoration: underline; }
 
 /* Responsive */
 @media (max-width: 768px) {
