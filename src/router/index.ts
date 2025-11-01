@@ -30,5 +30,6 @@ export default createRouter({
     { path: '/operador', component: () => import('../views/operador.vue') },
     { path: '/repartidor', component: () => import('../views/Repartidor.vue') },
     { path: '/supervisor', component: () => import('../views/Supervisor.vue') },
+    { path: '/impresion', component: () => import('../views/PrintPreview.vue') },
   ],
 })

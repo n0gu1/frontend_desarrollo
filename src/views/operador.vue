@@ -143,7 +143,7 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
             <polyline points="15 18 9 12 15 6"/>
           </svg>
-          Volver al menú
+        Volver al menú
         </button>
 
         <div class="processing-card" v-if="selectedOrder">
@@ -293,6 +293,7 @@
 
 <script>
 import { ref, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { get /*, post */ } from '../lib/api'
 
 export default {
@@ -309,16 +310,17 @@ export default {
     const loading = ref(false)
     const error = ref(null)
 
-    // Usa la misma base que el resto del front
+    const route = useRoute()
+    const router = useRouter()
+
     const API_BASE = (import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE || '').replace(/\/+$/, '')
 
-    // placeholder y normalizador (soporta data:)
     const IMG_PLACEHOLDER =
       'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><rect width="100%" height="100%" fill="#1a1f26"/><text x="50%" y="50%" fill="#4fd1c5" font-size="16" text-anchor="middle">Sin imagen</text></svg>'
 
     const urlFor = (p) => {
       if (!p) return IMG_PLACEHOLDER
-      if (p.startsWith('data:')) return p // << importante para base64
+      if (p.startsWith('data:')) return p
       if (p.startsWith('http://') || p.startsWith('https://')) return p
       if (!API_BASE) return p
       const clean = p.startsWith('/') ? p : '/' + p
@@ -327,42 +329,35 @@ export default {
 
     const onImgError = (ev) => { ev.target.src = IMG_PLACEHOLDER }
 
-    // La API de operador debe devolver al menos: id (orden_id), folio, customerName...
     const mapCard = (row) => {
       const orderId = row?.id ?? row?.ordenId ?? row?.orderId ?? null
       const name = row?.customerName && row.customerName.trim() !== '' ? row.customerName : 'Cliente'
       const folio = row?.folio || (orderId ? String(orderId) : 'SIN-FOLIO')
-
-      // imágenes inicialmente vacías; se hidratan con /imagenes-b64/by-order
       return {
-        id: orderId,               // <— numérico si viene
-        folio,                     // <— visible para el operador
+        id: orderId,
+        folio,
         customerName: name,
         nfcType: row?.nfcType || 'Link',
         nfcData: row?.nfcData || '',
-        imageA: IMG_PLACEHOLDER,
-        imageB: IMG_PLACEHOLDER,
+        imageA: urlFor(row?.imageA) || IMG_PLACEHOLDER,
+        imageB: urlFor(row?.imageB) || IMG_PLACEHOLDER,
         status: 'pending'
       }
     }
 
-    // Obtiene órdenes para operador
     const fetchOperatorOrders = async (estado = 'CRE', limit = 50) => {
       return await get('/api/operator/orders', { params: { estado, limit } })
     }
 
-    // Hidrata imágenes A/B desde imagenes_b64 por orden
     const hydrateImagesForCard = async (card) => {
       try {
-        if (!card?.id || isNaN(Number(card.id))) return // requiere orden_id
+        if (!card?.id || isNaN(Number(card.id))) return
         const r = await get(`/api/imagenes-b64/by-order/${card.id}`)
-        if (r && (r.ladoA_b64 || r.ladoB_b64)) {
-          card.imageA = urlFor(r.ladoA_b64 || card.imageA)
-          card.imageB = urlFor(r.ladoB_b64 || card.imageB)
+        if (r) {
+          if (r.ladoA_b64) card.imageA = urlFor(r.ladoA_b64)
+          if (r.ladoB_b64) card.imageB = urlFor(r.ladoB_b64)
         }
-      } catch (e) {
-        // silencioso; dejamos placeholder
-      }
+      } catch { /* silencioso */ }
     }
 
     const loadOrders = async () => {
@@ -373,8 +368,6 @@ export default {
         const arr = Array.isArray(resp?.items) ? resp.items : []
         const cards = arr.map(mapCard)
         pendingOrders.value = cards
-
-        // Hidratación paralela (no bloquea la UI)
         await Promise.all(cards.map(hydrateImagesForCard))
       } catch (e) {
         error.value = 'No se pudieron cargar las órdenes.'
@@ -395,27 +388,38 @@ export default {
       selectedOrder.value = { ...order }
       currentView.value = 'processing'
       currentStep.value = 1
-
-      // Asegura imágenes por si la tarjeta no estaba hidratada aún
       await hydrateImagesForCard(selectedOrder.value)
     }
 
     const backToMenu = () => {
-      if (currentStep.value > 1) {
-        if (!confirm('¿Estás seguro? Se perderá el progreso actual.')) return
-      }
+      if (currentStep.value > 1 && !confirm('¿Estás seguro? Se perderá el progreso actual.')) return
       currentView.value = 'menu'
       selectedOrder.value = null
       currentStep.value = 1
     }
 
+    // >>> CAMBIO: abrir /impresion en nueva pestaña y saltar a Validación de Calidad (paso 2)
     const sendToPrint = async () => {
+      if (!selectedOrder.value) return
       printing.value = true
-      await new Promise(r => setTimeout(r, 1500))
-      printing.value = false
+
+      const d = 35, gap = 6, copies = 1, labels = 1
+      const url =
+        `/impresion?orderId=${encodeURIComponent(selectedOrder.value.id || '')}` +
+        `&folio=${encodeURIComponent(selectedOrder.value.folio || '')}` +
+        `&d=${d}&gap=${gap}&copies=${copies}&labels=${labels}`
+
+      // Abrimos la vista de impresión sin perder esta vista
+      window.open(url, '_blank')
+
+      // Pasamos inmediatamente a Validación de Calidad
       currentStep.value = 2
-      updateOrderStatus('printing')
+      updateOrderStatus('printed')
+
+      // Quitamos spinner
+      printing.value = false
     }
+    // <<< FIN CAMBIO
 
     const validateQuality = (isGood) => {
       if (isGood) {
@@ -459,11 +463,28 @@ export default {
 
     const updateOrderStatus = (status) => {
       console.log(`[operador] actualizar estado ${selectedOrder.value?.folio} -> ${status}`)
-      // Si decides persistir, aquí iría el POST a tu API.
+      // Persistencia opcional:
       // await post(`/api/operator/orders/${selectedOrder.value.id}/advance`, { to: 'PROC' })
     }
 
-    onMounted(loadOrders)
+    // Si volvemos de /impresion con ?step=quality&orderId=..., saltamos al Paso 2
+    const tryJumpToQuality = () => {
+      const step = route.query.step
+      const qId = route.query.orderId
+      if (step === 'quality' && qId) {
+        const hit = pendingOrders.value.find(o => String(o.id ?? o.folio) === String(qId))
+        if (hit) {
+          selectOrder(hit)
+          currentStep.value = 2
+          router.replace({ query: {} }) // limpia query
+        }
+      }
+    }
+
+    onMounted(async () => {
+      await loadOrders()
+      tryJumpToQuality()
+    })
 
     return {
       currentView, currentStep, selectedOrder,
