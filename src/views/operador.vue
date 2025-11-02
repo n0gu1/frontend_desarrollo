@@ -77,9 +77,9 @@
           </div>
         </div>
 
-        <!-- Lista de Órdenes Pendientes -->
+        <!-- Lista de Órdenes Asignadas (PROC) -->
         <div class="orders-section">
-          <h2 class="section-title">Órdenes Pendientes</h2>
+          <h2 class="section-title">Órdenes Asignadas (En Proceso)</h2>
 
           <div v-if="error" class="error-state">
             <p>{{ error }}</p>
@@ -92,16 +92,16 @@
             <p>Cargando...</p>
           </div>
 
-          <div v-else-if="pendingOrders.length === 0" class="empty-state">
+          <div v-else-if="processingOrders.length === 0" class="empty-state">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
               <polyline points="20 6 9 17 4 12" />
             </svg>
-            <p>No hay órdenes pendientes</p>
+            <p>No hay órdenes en proceso</p>
           </div>
 
           <div v-else class="orders-grid">
             <div
-              v-for="order in pendingOrders"
+              v-for="order in processingOrders"
               :key="order.id || order.folio"
               class="order-card"
               @click="selectOrder(order)"
@@ -325,7 +325,7 @@ export default {
     const programming = ref(false)
     const completedToday = ref(0)
 
-    const pendingOrders = ref([])      // solo CRE
+    const pendingOrders = ref([])      // solo CRE (queda vacío en esta vista)
     const processingOrders = ref([])   // solo PROC
     const loading = ref(false)
     const error = ref(null)
@@ -412,24 +412,20 @@ export default {
       if (i > -1) arr.value.splice(i, 1)
     }
 
-    // Carga listas (defensivo + persistente)
+    // Carga listas (ahora sólo PROC)
     const loadOrders = async () => {
       loading.value = true
       error.value = null
       try {
-        // PENDIENTES: pido 'CRE' pero además filtro por estado real
-        const respCre = await fetchOperatorOrders('CRE', 200)
-        const arrCre = Array.isArray(respCre?.items) ? respCre.items : []
-        const cardsCre = arrCre.map(mapCard)
-        const onlyCRE = await filterByEstadoReal(cardsCre, 'CRE')
-        pendingOrders.value = onlyCRE
-        await Promise.all(onlyCRE.map(hydrateImagesForCard))
-
-        // EN PROCESO: idem pero para PROC (para que el contador sea real)
+        // EN PROCESO: órdenes que el supervisor ya asignó (estado PROC)
         const respProc = await fetchOperatorOrders('PROC', 200)
         const arrProc = Array.isArray(respProc?.items) ? respProc.items : []
         const cardsProc = arrProc.map(mapCard)
         processingOrders.value = await filterByEstadoReal(cardsProc, 'PROC')
+        await Promise.all(processingOrders.value.map(hydrateImagesForCard))
+
+        // Aseguramos que pendientes (CRE) quede vacío en esta vista
+        pendingOrders.value = []
       } catch (e) {
         console.error(e)
         error.value = 'No se pudieron cargar las órdenes.'
@@ -456,7 +452,7 @@ export default {
       currentStep.value = 1
       await hydrateImagesForCard(selectedOrder.value)
 
-      // CRE -> PROC (persistente)
+      // Si viniera en CRE, lo promueve a PROC; si ya es PROC no afecta
       try { await advanceState('PROC') } catch (e) { console.warn(e) }
       removeFrom(pendingOrders, order)
       processingOrders.value.unshift(order)
@@ -528,11 +524,14 @@ export default {
     }
     const isLikelyUrl = (s) => /^https?:\/\//i.test(s || '')
 
+    // Ajuste: buscar primero en processingOrders
     const tryJumpToQuality = () => {
       const step = route.query.step
       const qId = route.query.orderId
       if (step === 'quality' && qId) {
-        const hit = pendingOrders.value.find(o => String(o.id ?? o.folio) === String(qId))
+        const hit =
+          processingOrders.value.find(o => String(o.id ?? o.folio) === String(qId)) ||
+          pendingOrders.value.find(o => String(o.id ?? o.folio) === String(qId))
         if (hit) {
           selectOrder(hit)
           currentStep.value = 2
@@ -557,8 +556,6 @@ export default {
   }
 }
 </script>
-
-
 
 <style scoped>
 /* (tus estilos, sin cambios) */
