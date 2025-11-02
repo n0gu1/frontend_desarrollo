@@ -29,11 +29,18 @@
       <div class="orders-table-section">
         <div class="table-container">
           <table class="orders-table">
+            <!-- Control estricto de anchos para evitar espacios -->
+            <colgroup>
+              <col style="width:160px;" />
+              <col />
+              <col style="width:420px;" />
+            </colgroup>
+
             <thead>
               <tr>
-                <th style="width:160px;">Folio</th>
+                <th>Folio</th>
                 <th>Cliente</th>
-                <th style="width:420px;">Operador</th>
+                <th>Operador</th>
               </tr>
             </thead>
 
@@ -42,7 +49,7 @@
                 <td><div class="skeleton pill" style="width:100px;height:18px;"></div></td>
                 <td><div class="skeleton" style="width:240px;height:18px;"></div></td>
                 <td>
-                  <div class="skeleton" style="width:280px;height:32px;margin-bottom:.5rem;"></div>
+                  <div class="skeleton" style="width:100%;height:32px;margin-bottom:.5rem;"></div>
                   <div class="skeleton pill" style="width:110px;height:32px;"></div>
                 </td>
               </tr>
@@ -268,40 +275,140 @@ export default {
 
 <style scoped>
 *{margin:0;padding:0;box-sizing:border-box}
-.supervisor-container{min-height:100vh;background:linear-gradient(135deg,#0f1419 0%,#1a1f26 100%);color:#e1e8ed;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
-.header{background:rgba(20,25,30,.95);backdrop-filter:blur(10px);border-bottom:1px solid rgba(79,209,197,.2);position:sticky;top:0;z-index:100;box-shadow:0 4px 20px rgba(0,0,0,.3)}
-.header-content{max-width:1600px;margin:0 auto;padding:1.2rem 2rem;display:flex;justify-content:space-between;align-items:center}
+
+/* Contenedor general */
+.supervisor-container{
+  min-height:100vh;
+  background:linear-gradient(135deg,#0f1419 0%,#1a1f26 100%);
+  color:#e1e8ed;
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif
+}
+
+/* Header */
+.header{
+  background:rgba(20,25,30,.95);
+  backdrop-filter:blur(10px);
+  border-bottom:1px solid rgba(79,209,197,.2);
+  position:sticky;top:0;z-index:100;
+  box-shadow:0 4px 20px rgba(0,0,0,.3)
+}
+.header-content{
+  max-width:1600px;margin:0 auto;padding:1.2rem 2rem;
+  display:flex;justify-content:space-between;align-items:center
+}
 .title{display:flex;align-items:center;gap:.8rem;font-size:1.5rem;font-weight:700;color:#4fd1c5}
 .title .icon{width:32px;height:32px;stroke-width:2}
-.btn-logout{display:flex;align-items:center;gap:.5rem;padding:.6rem 1.2rem;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:8px;color:#ef4444;cursor:pointer;transition:all .3s ease;font-size:.95rem;font-weight:500}
-.btn-logout:hover{background:rgba(239,68,68,.2);transform:translateY(-2px)}
+.btn-logout{
+  display:flex;align-items:center;gap:.5rem;padding:.6rem 1.2rem;
+  background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);
+  border-radius:8px;color:#ef4444;cursor:pointer;transition:all .2s ease;
+  font-size:.95rem;font-weight:600
+}
+.btn-logout:hover{background:rgba(239,68,68,.2);transform:translateY(-1px)}
+
+/* Main */
 .main-content{max-width:1600px;margin:0 auto;padding:2rem}
 .section-header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem}
 .section-header h2{font-size:1.5rem;color:#4fd1c5;font-weight:600}
-.orders-table-section{background:rgba(20,25,30,.6);border:1px solid rgba(79,209,197,.2);border-radius:12px;padding:2rem}
+
+/* Tarjeta/tabla */
+.orders-table-section{
+  background:rgba(20,25,30,.8);
+  border:1px solid rgba(79,209,197,.2);
+  border-radius:12px;padding:1.4rem
+}
 .table-container{overflow-x:auto}
-.orders-table{width:100%;border-collapse:collapse}
-.orders-table thead{background:rgba(79,209,197,.1)}
-.orders-table th{padding:1rem;text-align:left;color:#4fd1c5;font-weight:600;font-size:.9rem;border-bottom:2px solid rgba(79,209,197,.3)}
-.orders-table td{padding:1.2rem 1rem;border-bottom:1px solid rgba(79,209,197,.1)}
-.orders-table tbody tr{transition:all .3s ease}
+
+/* Tabla: sin huecos ni fondos blancos */
+.orders-table{
+  width:100%;
+  border-collapse:collapse;
+  table-layout:fixed;
+}
+.orders-table, .orders-table thead, .orders-table tbody,
+.orders-table th, .orders-table td{
+  background-color:transparent !important;
+}
+.orders-table thead{background:rgba(79,209,197,.08)}
+.orders-table th{
+  padding:1rem .9rem;text-align:left;color:#4fd1c5;
+  font-weight:600;font-size:.9rem;border-bottom:2px solid rgba(79,209,197,.25);
+  vertical-align:middle
+}
+.orders-table td{
+  padding:1rem .9rem;border-bottom:1px solid rgba(79,209,197,.12);
+  vertical-align:middle
+}
+.orders-table tbody tr{transition:background .2s ease}
 .orders-table tbody tr:hover{background:rgba(79,209,197,.05)}
 .order-id{font-weight:700;color:#4fd1c5;font-size:1rem}
+
+/* Celdas */
 .customer-cell{display:flex;flex-direction:column;gap:.3rem}
 .customer-cell strong{color:#e1e8ed}
-.no-results{text-align:center;padding:3rem;color:#9ca3af}
-.no-results svg{width:60px;height:60px;color:#4fd1c5;opacity:.5;margin-bottom:1rem;stroke-width:1.5}
-.skeleton{position:relative;overflow:hidden;background:rgba(79,209,197,.08);border-radius:8px}
-.skeleton.pill{border-radius:999px}
-.skeleton::after{content:"";position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,rgba(255,255,255,0) 0%,rgba(79,209,197,.15) 50%,rgba(255,255,255,0) 100%);animation:shimmer 1.3s infinite}
-@keyframes shimmer{100%{transform:translateX(100%)}}
-.operator-cell{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap}
-.filter-select{padding:.6rem .8rem;background:rgba(15,20,25,.7);border:1px solid rgba(79,209,197,.3);border-radius:8px;color:#e1e8ed;font-size:.95rem;cursor:pointer;min-width:260px}
-.filter-select:focus{outline:none;border-color:#4fd1c5;box-shadow:0 0 0 3px rgba(79,209,197,.1)}
-.btn-assign{display:flex;align-items:center;gap:.4rem;padding:.55rem .9rem;background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.35);border-radius:8px;color:#22c55e;cursor:pointer;transition:all .2s ease;font-size:.92rem;font-weight:600}
+
+/* Operador */
+.operator-cell{
+  display:flex;align-items:center;gap:.6rem;flex-wrap:nowrap;width:100%
+}
+
+/* SELECT oscuro (sin fondo blanco) */
+.filter-select{
+  appearance:none; -webkit-appearance:none; -moz-appearance:none;
+  flex:1 1 auto; min-width:220px; max-width:100%;
+  padding:.6rem .8rem;
+  background-color:#11161c; /* oscuro */
+  border:1px solid rgba(79,209,197,.35);
+  border-radius:8px;
+  color:#e1e8ed;
+  font-size:.95rem;
+  cursor:pointer
+}
+.filter-select:focus{
+  outline:none;border-color:#4fd1c5;box-shadow:0 0 0 3px rgba(79,209,197,.12)
+}
+/* Eliminar caret IE */
+.filter-select::-ms-expand{display:none}
+/* Opciones del desplegable (compatible en la mayoría) */
+.filter-select option{
+  background:#0f1419;color:#e1e8ed
+}
+
+/* Botón */
+.btn-assign{
+  flex:0 0 auto;display:flex;align-items:center;gap:.4rem;
+  padding:.55rem .9rem;background:rgba(34,197,94,.12);
+  border:1px solid rgba(34,197,94,.35);border-radius:8px;
+  color:#22c55e;cursor:pointer;transition:all .15s ease;
+  font-size:.92rem;font-weight:700
+}
 .btn-assign svg{width:18px;height:18px;stroke-width:3}
 .btn-assign:hover{background:rgba(34,197,94,.2);transform:translateY(-1px)}
 .btn-assign:disabled{opacity:.6;cursor:not-allowed;transform:none}
+
+/* Estados vacíos */
+.no-results{text-align:center;padding:2.4rem;color:#9ca3af}
+.no-results svg{width:56px;height:56px;color:#4fd1c5;opacity:.55;margin-bottom:.9rem;stroke-width:1.5}
+
+/* Skeletons */
+.skeleton{position:relative;overflow:hidden;background:rgba(79,209,197,.08);border-radius:8px}
+.skeleton.pill{border-radius:999px}
+.skeleton::after{
+  content:"";position:absolute;inset:0;transform:translateX(-100%);
+  background:linear-gradient(90deg,rgba(255,255,255,0) 0%,rgba(79,209,197,.15) 50%,rgba(255,255,255,0) 100%);
+  animation:shimmer 1.3s infinite
+}
+@keyframes shimmer{100%{transform:translateX(100%)}}
+
 .saving-hint{color:#9ca3af;font-size:.85rem}
 .assigned-hint{color:#4fd1c5;font-size:.85rem}
+</style>
+
+<!-- Estilos GLOBAL (no scoped) para eliminar el fondo blanco de Vuetify/app -->
+<style>
+:root, html, body, #app,
+.v-application, .v-application--wrap, .v-main{
+  background:#0f1419 !important;
+}
+.v-application, .v-main{ color-scheme: dark; }
 </style>
