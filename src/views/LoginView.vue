@@ -169,13 +169,14 @@ async function doLogin() {
   loading.value = true; msg.value = ''; ok.value = false
   try {
     const payload = { credential: credential.value, password: password.value }
-    dbgLog('POST /api/auth/login', payload)
+    dbgLog('POST /api/auth/login-with-role', payload) // ← debug
 
     // SLA: abortar a los 12 s
     const ac = new AbortController()
     const timer = window.setTimeout(() => ac.abort(), LOGIN_BUDGET_MS)
 
-    const r = await post('/api/auth/login', payload, { signal: ac.signal } as any)
+    // Usamos el nuevo endpoint que devuelve id + roleId
+    const r = await post('/api/auth/login-with-role', payload, { signal: ac.signal } as any)
     window.clearTimeout(timer)
 
     dbgLog('login resp', r)
@@ -183,11 +184,23 @@ async function doLogin() {
     msg.value = r?.message || (ok.value ? 'OK' : 'Credenciales inválidas')
 
     if (ok.value) {
-      // Guardar userId estándar (id/usuarioId/userId)
       const uid = r?.id ?? r?.usuarioId ?? r?.userId
       if (uid) {
         localStorage.setItem('userId', String(uid))
-        window.dispatchEvent(new Event('auth-sync')) // << añade esto
+
+        // Guardar roleId si viene
+        const rid = r?.roleId ?? r?.rolId ?? r?.RolId
+        if (rid !== null && rid !== undefined) {
+          localStorage.setItem('roleId', String(rid))
+        }
+
+        window.dispatchEvent(new Event('auth-sync'))
+
+        // Redirección condicional: roleId === 5 -> /operador; si no, /shop
+        const role = Number(rid)
+        const target = role === 5 ? '/operador' : '/shop'
+        router.push(target)
+        return
       }
       router.push('/shop')
     }
@@ -218,7 +231,7 @@ async function checkExists() {
     dbgLog(`GET ${url}`)
 
     const ac = new AbortController()
-    const timer = window.setTimeout(() => ac.abort(), EXISTS_TIMEOUT_MS) // ← CORREGIDO (antes decía "the const")
+    const timer = window.setTimeout(() => ac.abort(), EXISTS_TIMEOUT_MS)
 
     const data = await get(url, { signal: ac.signal } as any)
     window.clearTimeout(timer)
@@ -426,9 +439,34 @@ function afterSuccess(res: any) {
   const r = res.raw || {}
   const percentText = typeof r.percent === 'number' ? r.percent.toFixed(1) + '%' : (r.percent ?? '—')
   msg.value = `OK. Usuario=${r.userId ?? r.usuarioId ?? r.id ?? 'N/A'} (${r.email || r.nickname || 's/n'}) score=${r.score ?? '—'} (${percentText})`
-  // Guardar userId y redirigir a /shop
+
   const uid = r?.userId ?? r?.usuarioId ?? r?.id
-  if (uid) localStorage.setItem('userId', String(uid))
+  if (uid) {
+    localStorage.setItem('userId', String(uid))
+
+    // Obtener roleId (si viene en la respuesta, úsalo; si no, consulta el endpoint de rol)
+    ;(async () => {
+      let rid = r?.roleId ?? r?.rolId ?? r?.RolId
+      if (rid == null) {
+        try {
+          const got = await get<{ userId:number; rolId:number }>(`/api/users/${uid}/role`)
+          if (got && got.rolId != null) rid = got.rolId
+        } catch { /* silencioso */ }
+      }
+      if (rid != null) localStorage.setItem('roleId', String(rid))
+
+      window.dispatchEvent(new Event('auth-sync'))
+
+      // Redirección condicional
+      const role = Number(rid)
+      const target = role === 5 ? '/operador' : '/shop'
+      closeCamera()
+      router.push(target)
+    })()
+    return
+  }
+
+  // Fallback si no hubo uid
   closeCamera()
   router.push('/shop')
 }
