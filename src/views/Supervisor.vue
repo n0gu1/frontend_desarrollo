@@ -214,6 +214,16 @@ export default {
       } catch { this._assignedIds = new Set() }
     },
 
+    // === NUEVO: helper para mover estado por FOLIO ===
+    async setOrderStateByFolio(folio, code) {
+      if (!folio) return
+      try {
+        await post(`/api/local/orders/${encodeURIComponent(folio)}/set-state`, { code })
+      } catch (e) {
+        console.warn('No se pudo cambiar estado a', code, 'para folio', folio, e)
+      }
+    },
+
     async reload() {
       this.loading = true
       this.error = null
@@ -228,14 +238,26 @@ export default {
       }
     },
 
+    // === TOCADO: al asignar, si hay operador => mover a PROC con /set-state por folio ===
     async assign(ordenId, operadorUsuarioId) {
       if (!ordenId) return
+      // capturamos el folio ANTES de mutar arrays
+      const current = this.orders.find(o => Number(o.id) === Number(ordenId)) || null
+      const folio = current?.folio
+
       try {
         this.saving[ordenId] = true
         const opId = (operadorUsuarioId === '' || operadorUsuarioId == null) ? null : Number(operadorUsuarioId)
 
+        // 1) guardar asignación
         await post(`/api/supervisor/orders/${ordenId}/assign-operator`, { operadorUsuarioId: opId })
 
+        // 2) si hay operador asignado, mover estado a PROC en BD
+        if (opId != null && !Number.isNaN(opId) && folio) {
+          await this.setOrderStateByFolio(folio, 'PROC')
+        }
+
+        // 3) actualizar UI como ya lo hacías
         if (opId == null || Number.isNaN(opId)) {
           this.selectedOperators[ordenId] = ''
           delete this.assignedNames[ordenId]
@@ -245,7 +267,8 @@ export default {
           this.selectedOperators[ordenId] = String(opId)
           this.assignedNames[ordenId] = nick
           this._assignedIds.add(Number(ordenId))
-          this.orders = this.orders.filter(o => Number(o.id) !== Number(ordenId)) // desaparecer ya
+          // como ya pasó a PROC (y esta tabla lista CRE), desaparece
+          this.orders = this.orders.filter(o => Number(o.id) !== Number(ordenId))
         }
 
         await this.loadAssignments().catch(() => {})
@@ -272,6 +295,7 @@ export default {
   }
 }
 </script>
+
 
 <style scoped>
 *{margin:0;padding:0;box-sizing:border-box}
