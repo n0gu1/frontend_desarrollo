@@ -313,7 +313,7 @@
 <script>
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { get, post } from '../lib/api'        // ← AQUI: import post
+import { get, post } from '../lib/api'
 
 export default {
   name: 'OperadorView',
@@ -324,8 +324,9 @@ export default {
     const printing = ref(false)
     const programming = ref(false)
     const completedToday = ref(0)
-    const pendingOrders = ref([])
-    const processingOrders = ref([])
+
+    const pendingOrders = ref([])      // solo CRE
+    const processingOrders = ref([])   // solo PROC
     const loading = ref(false)
     const error = ref(null)
 
@@ -333,7 +334,6 @@ export default {
     const router = useRouter()
 
     const API_BASE = (import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE || '').replace(/\/+$/, '')
-
     const IMG_PLACEHOLDER =
       'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><rect width="100%" height="100%" fill="#1a1f26"/><text x="50%" y="50%" fill="#4fd1c5" font-size="16" text-anchor="middle">Sin imagen</text></svg>'
 
@@ -345,22 +345,25 @@ export default {
       const clean = p.startsWith('/') ? p : '/' + p
       return API_BASE + clean
     }
-
     const onImgError = (ev) => { ev.target.src = IMG_PLACEHOLDER }
+
+    // ---- helpers
+    const pick = (...xs) => xs.find(v => typeof v === 'string' && v.trim() !== '')?.trim()
+    const nameOf = (row) =>
+      pick(row?.customerName, row?.cliente, row?.nickname, row?.usuarioNombre, row?.usuario_nombre, row?.usuario, row?.nombre, row?.name, row?.userName) || 'Cliente'
 
     const mapCard = (row) => {
       const orderId = row?.id ?? row?.ordenId ?? row?.orderId ?? null
-      const name = row?.customerName && row.customerName.trim() !== '' ? row.customerName : 'Cliente'
       const folio = row?.folio || (orderId ? String(orderId) : 'SIN-FOLIO')
       return {
         id: orderId,
         folio,
-        customerName: name,
+        customerName: nameOf(row),
         nfcType: row?.nfcType || 'Link',
         nfcData: row?.nfcData || '',
         imageA: urlFor(row?.imageA) || IMG_PLACEHOLDER,
         imageB: urlFor(row?.imageB) || IMG_PLACEHOLDER,
-        status: 'pending'
+        _estado: undefined // se llenará con /tracking
       }
     }
 
@@ -371,6 +374,7 @@ export default {
       })
     }
 
+    // Lee imágenes + opc. URL general
     const hydrateImagesForCard = async (card) => {
       try {
         if (!card?.id || isNaN(Number(card.id))) return
@@ -378,23 +382,56 @@ export default {
         if (r) {
           if (r.ladoA_b64) card.imageA = urlFor(r.ladoA_b64)
           if (r.ladoB_b64) card.imageB = urlFor(r.ladoB_b64)
-          if (r.url_general && String(r.url_general).trim() !== '') {
-            card.nfcData = String(r.url_general).trim()
-          }
+          if (r.url_general && String(r.url_general).trim() !== '') card.nfcData = String(r.url_general).trim()
         }
       } catch { /* silencioso */ }
     }
 
+    // Verifica estado real por folio (fuente de verdad)
+    const fetchEstadoReal = async (folio) => {
+      try {
+        const t = await get(`/api/local/orders/${encodeURIComponent(folio)}/tracking`)
+        return String(t?.orden?.estado_codigo || '').toUpperCase()
+      } catch { return '' }
+    }
+
+    // De una lista de cards, conserva solo las del estado pedido (CRE o PROC)
+    const filterByEstadoReal = async (cards, estadoObjetivo) => {
+      const checked = await Promise.all(cards.map(async c => {
+        c._estado = await fetchEstadoReal(c.folio)
+        return c
+      }))
+      return checked.filter(c => c._estado === estadoObjetivo)
+    }
+
+    // utilidades
+    const keyOf = (o) => String(o?.id ?? o?.folio)
+    const removeFrom = (arr, o) => {
+      const k = keyOf(o)
+      const i = arr.value.findIndex(x => keyOf(x) === k)
+      if (i > -1) arr.value.splice(i, 1)
+    }
+
+    // Carga listas (defensivo + persistente)
     const loadOrders = async () => {
       loading.value = true
       error.value = null
       try {
-        const resp = await fetchOperatorOrders('CRE', 50)
-        const arr = Array.isArray(resp?.items) ? resp.items : []
-        const cards = arr.map(mapCard)
-        pendingOrders.value = cards
-        await Promise.all(cards.map(hydrateImagesForCard))
+        // PENDIENTES: pido 'CRE' pero además filtro por estado real
+        const respCre = await fetchOperatorOrders('CRE', 200)
+        const arrCre = Array.isArray(respCre?.items) ? respCre.items : []
+        const cardsCre = arrCre.map(mapCard)
+        const onlyCRE = await filterByEstadoReal(cardsCre, 'CRE')
+        pendingOrders.value = onlyCRE
+        await Promise.all(onlyCRE.map(hydrateImagesForCard))
+
+        // EN PROCESO: idem pero para PROC (para que el contador sea real)
+        const respProc = await fetchOperatorOrders('PROC', 200)
+        const arrProc = Array.isArray(respProc?.items) ? respProc.items : []
+        const cardsProc = arrProc.map(mapCard)
+        processingOrders.value = await filterByEstadoReal(cardsProc, 'PROC')
       } catch (e) {
+        console.error(e)
         error.value = 'No se pudieron cargar las órdenes.'
       } finally {
         loading.value = false
@@ -404,21 +441,13 @@ export default {
     const reload = () => loadOrders()
 
     const logout = () => {
-      if (confirm('¿Estás seguro de que deseas cerrar sesión?')) {
-        console.log('Cerrando sesión...')
-      }
+      if (confirm('¿Estás seguro de que deseas cerrar sesión?')) console.log('Cerrando sesión…')
     }
 
-    // ======= AVANCE DE ESTADO (usa endpoint por FOLIO que ya tienes) =======
+    // Avanzar estado con tu endpoint por folio (persiste en BD)
     const advanceState = async (toCode) => {
       if (!selectedOrder.value?.folio) return
-      try {
-        await post(`/api/local/orders/${encodeURIComponent(selectedOrder.value.folio)}/set-state`, { code: toCode })
-        console.log(`[operador] estado ${selectedOrder.value.folio} -> ${toCode}`)
-      } catch (e) {
-        console.error(e)
-        alert('No se pudo avanzar el estado de la orden')
-      }
+      await post(`/api/local/orders/${encodeURIComponent(selectedOrder.value.folio)}/set-state`, { code: toCode })
     }
 
     const selectOrder = async (order) => {
@@ -427,8 +456,10 @@ export default {
       currentStep.value = 1
       await hydrateImagesForCard(selectedOrder.value)
 
-      // Al iniciar procesamiento, mover a PROC (CRE -> PROC)
-      await advanceState('PROC')
+      // CRE -> PROC (persistente)
+      try { await advanceState('PROC') } catch (e) { console.warn(e) }
+      removeFrom(pendingOrders, order)
+      processingOrders.value.unshift(order)
     }
 
     const backToMenu = () => {
@@ -438,116 +469,65 @@ export default {
       currentStep.value = 1
     }
 
-    // --- Web NFC: soporte en navegador
+    // Web NFC
     const nfcSupported = ('NDEFReader' in window)
-
-    // Abrir /impresion en nueva pestaña y saltar a Paso 2
     const sendToPrint = async () => {
       if (!selectedOrder.value) return
       printing.value = true
-
       const d = 35, gap = 6, copies = 1, labels = 1
       const url =
         `/impresion?orderId=${encodeURIComponent(selectedOrder.value.id || '')}` +
         `&folio=${encodeURIComponent(selectedOrder.value.folio || '')}` +
         `&d=${d}&gap=${gap}&copies=${copies}&labels=${labels}`
-
       window.open(url, '_blank')
       currentStep.value = 2
       printing.value = false
     }
-
-    const validateQuality = (isGood) => {
-      if (isGood) {
-        currentStep.value = 3
-      } else {
-        currentStep.value = 1
-        alert('Reiniciando proceso de impresión...')
-      }
-    }
-
-    // --- Web NFC: escribir link/texto a la etiqueta
+    const validateQuality = (ok) => { currentStep.value = ok ? 3 : 1 }
     const programNFC = async () => {
       const data = (selectedOrder.value?.nfcData || '').trim()
-      if (!data) {
-        alert('No hay datos para programar')
-        return
-      }
-
+      if (!data) return alert('No hay datos para programar')
       programming.value = true
       try {
-        if (!('NDEFReader' in window)) {
-          throw new Error('Web NFC no disponible. Usa Chrome en Android y abre el sitio por HTTPS.')
-        }
-
-        if (isLikelyUrl(data)) {
-          const bytes = new TextEncoder().encode(data).length
-          if (bytes > 130) console.warn('La URL podría ser grande para una NTAG213. Considera acortarla.')
-        }
-
+        if (!('NDEFReader' in window)) throw new Error('Web NFC no disponible. Usa Chrome en Android y HTTPS.')
         const ndef = new NDEFReader()
-        const msg = isLikelyUrl(data)
-          ? { records: [{ recordType: 'url', data }] }
-          : { records: [{ recordType: 'text', data, lang: 'es' }] }
-
+        const msg = /^https?:\/\//i.test(data) ? { records: [{ recordType: 'url', data }] }
+                                              : { records: [{ recordType: 'text', data, lang: 'es' }] }
         await ndef.write(msg)
         currentStep.value = 4
         alert('✓ Etiqueta programada correctamente')
       } catch (e) {
-        console.error(e)
-        alert('No se pudo programar la etiqueta: ' + (e?.message || e))
-      } finally {
-        programming.value = false
-      }
+        console.error(e); alert('No se pudo programar la etiqueta: ' + (e?.message || e))
+      } finally { programming.value = false }
     }
-
-    const validateNFC = (isGood) => {
-      if (isGood) {
-        currentStep.value = 5
-      } else {
-        currentStep.value = 3
-        alert('Reprogramando NFC...')
-      }
-    }
+    const validateNFC = (ok) => { currentStep.value = ok ? 5 : 3 }
 
     const finishOrder = async () => {
-      // PROC -> READY
-      await advanceState('READY')
-
-      const idx = pendingOrders.value.findIndex(
-        o => (o.id || o.folio) === (selectedOrder.value.id || selectedOrder.value.folio)
-      )
-      if (idx > -1) pendingOrders.value.splice(idx, 1)
-
-      processingOrders.value.push(selectedOrder.value)
+      // PROC -> READY (persistente)
+      try { await advanceState('READY') } catch (e) { console.warn(e) }
+      removeFrom(pendingOrders, selectedOrder.value)
+      removeFrom(processingOrders, selectedOrder.value)
       completedToday.value++
       alert(`✓ Orden ${selectedOrder.value.folio} finalizada y enviada al repartidor`)
       currentView.value = 'menu'
       selectedOrder.value = null
       currentStep.value = 1
+      // para que al recargar tampoco aparezca:
+      await loadOrders()
     }
 
-    // Copiar al portapapeles los datos NFC
     const copyNfcData = async () => {
       const text = selectedOrder.value?.nfcData || ''
       if (!text) return
-      try {
-        await navigator.clipboard.writeText(text)
-        alert('Datos copiados al portapapeles')
-      } catch {
-        const ta = document.createElement('textarea')
-        ta.value = text
-        document.body.appendChild(ta)
-        ta.select()
-        document.execCommand('copy')
-        document.body.removeChild(ta)
+      try { await navigator.clipboard.writeText(text); alert('Datos copiados al portapapeles') }
+      catch {
+        const ta = document.createElement('textarea'); ta.value = text
+        document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta)
         alert('Datos copiados')
       }
     }
-
     const isLikelyUrl = (s) => /^https?:\/\//i.test(s || '')
 
-    // Si volvemos de /impresion con ?step=quality&orderId=..., saltamos al Paso 2
     const tryJumpToQuality = () => {
       const step = route.query.step
       const qId = route.query.orderId
@@ -572,12 +552,13 @@ export default {
       pendingOrders, processingOrders, loading, error,
       reload, logout, selectOrder, backToMenu,
       sendToPrint, validateQuality, programNFC, validateNFC, finishOrder,
-      onImgError, copyNfcData, isLikelyUrl,
-      nfcSupported
+      onImgError, copyNfcData, isLikelyUrl, nfcSupported
     }
   }
 }
 </script>
+
+
 
 <style scoped>
 /* (tus estilos, sin cambios) */
