@@ -100,8 +100,12 @@
           </div>
 
           <div v-else class="orders-grid">
-            <div v-for="order in pendingOrders" :key="order.id || order.folio" class="order-card"
-              @click="selectOrder(order)">
+            <div
+              v-for="order in pendingOrders"
+              :key="order.id || order.folio"
+              class="order-card"
+              @click="selectOrder(order)"
+            >
               <div class="order-header">
                 <span class="order-number">#{{ order.folio }}</span>
                 <span class="order-badge new">Nueva</span>
@@ -215,7 +219,7 @@
               <div class="nfc-info">
                 <p><strong>Tipo:</strong> {{ selectedOrder.nfcType }}</p>
 
-                <!-- Bloque de Datos con input readonly + copiar y link si es URL -->
+                <!-- Bloque de Datos -->
                 <div class="nfc-data">
                   <label>Datos a programar</label>
                   <div class="nfc-data-row">
@@ -224,8 +228,7 @@
                       Copiar
                     </button>
                   </div>
-                  <a v-if="isLikelyUrl(selectedOrder?.nfcData)" :href="selectedOrder.nfcData" target="_blank"
-                    rel="noopener" class="nfc-link">
+                  <a v-if="isLikelyUrl(selectedOrder?.nfcData)" :href="selectedOrder.nfcData" target="_blank" rel="noopener" class="nfc-link">
                     Abrir enlace
                   </a>
                 </div>
@@ -310,12 +313,12 @@
 <script>
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { get /*, post */ } from '../lib/api'
+import { get, post } from '../lib/api'        // ← AQUI: import post
 
 export default {
   name: 'OperadorView',
   setup() {
-    const currentView = ref('menu') // 'menu' | 'processing'
+    const currentView = ref('menu')
     const currentStep = ref(1)
     const selectedOrder = ref(null)
     const printing = ref(false)
@@ -354,7 +357,7 @@ export default {
         folio,
         customerName: name,
         nfcType: row?.nfcType || 'Link',
-        nfcData: row?.nfcData || '',  // viene del backend (url_general o qr_texto)
+        nfcData: row?.nfcData || '',
         imageA: urlFor(row?.imageA) || IMG_PLACEHOLDER,
         imageB: urlFor(row?.imageB) || IMG_PLACEHOLDER,
         status: 'pending'
@@ -363,7 +366,6 @@ export default {
 
     const fetchOperatorOrders = async (estado = 'CRE', limit = 50) => {
       const myId = Number(localStorage.getItem('userId') || 0)
-      // ← clave: ahora pide SOLO lo asignado al operador actual
       return await get('/api/operator/orders-assigned', {
         params: { estado, limit, operadorUsuarioId: myId || undefined }
       })
@@ -377,7 +379,7 @@ export default {
           if (r.ladoA_b64) card.imageA = urlFor(r.ladoA_b64)
           if (r.ladoB_b64) card.imageB = urlFor(r.ladoB_b64)
           if (r.url_general && String(r.url_general).trim() !== '') {
-            card.nfcData = String(r.url_general).trim()   // prioriza url_general
+            card.nfcData = String(r.url_general).trim()
           }
         }
       } catch { /* silencioso */ }
@@ -407,11 +409,26 @@ export default {
       }
     }
 
+    // ======= AVANCE DE ESTADO (usa endpoint por FOLIO que ya tienes) =======
+    const advanceState = async (toCode) => {
+      if (!selectedOrder.value?.folio) return
+      try {
+        await post(`/api/local/orders/${encodeURIComponent(selectedOrder.value.folio)}/set-state`, { code: toCode })
+        console.log(`[operador] estado ${selectedOrder.value.folio} -> ${toCode}`)
+      } catch (e) {
+        console.error(e)
+        alert('No se pudo avanzar el estado de la orden')
+      }
+    }
+
     const selectOrder = async (order) => {
       selectedOrder.value = { ...order }
       currentView.value = 'processing'
       currentStep.value = 1
       await hydrateImagesForCard(selectedOrder.value)
+
+      // Al iniciar procesamiento, mover a PROC (CRE -> PROC)
+      await advanceState('PROC')
     }
 
     const backToMenu = () => {
@@ -437,14 +454,12 @@ export default {
 
       window.open(url, '_blank')
       currentStep.value = 2
-      updateOrderStatus('printed')
       printing.value = false
     }
 
     const validateQuality = (isGood) => {
       if (isGood) {
         currentStep.value = 3
-        updateOrderStatus('quality_approved')
       } else {
         currentStep.value = 1
         alert('Reiniciando proceso de impresión...')
@@ -465,12 +480,9 @@ export default {
           throw new Error('Web NFC no disponible. Usa Chrome en Android y abre el sitio por HTTPS.')
         }
 
-        // Nota de tamaño típico NTAG213 (~144 bytes)
         if (isLikelyUrl(data)) {
           const bytes = new TextEncoder().encode(data).length
-          if (bytes > 130) {
-            console.warn('La URL podría ser grande para una NTAG213. Considera acortarla.')
-          }
+          if (bytes > 130) console.warn('La URL podría ser grande para una NTAG213. Considera acortarla.')
         }
 
         const ndef = new NDEFReader()
@@ -478,14 +490,11 @@ export default {
           ? { records: [{ recordType: 'url', data }] }
           : { records: [{ recordType: 'text', data, lang: 'es' }] }
 
-        await ndef.write(msg) // El navegador pedirá acercar la etiqueta
-
+        await ndef.write(msg)
         currentStep.value = 4
-        updateOrderStatus('nfc_programming_ok')
         alert('✓ Etiqueta programada correctamente')
       } catch (e) {
         console.error(e)
-        updateOrderStatus('nfc_programming_error')
         alert('No se pudo programar la etiqueta: ' + (e?.message || e))
       } finally {
         programming.value = false
@@ -495,29 +504,27 @@ export default {
     const validateNFC = (isGood) => {
       if (isGood) {
         currentStep.value = 5
-        updateOrderStatus('nfc_programmed')
       } else {
         currentStep.value = 3
         alert('Reprogramando NFC...')
       }
     }
 
-    const finishOrder = () => {
-      updateOrderStatus('ready_for_delivery')
-      const idx = pendingOrders.value.findIndex(o => (o.id || o.folio) === (selectedOrder.value.id || selectedOrder.value.folio))
+    const finishOrder = async () => {
+      // PROC -> READY
+      await advanceState('READY')
+
+      const idx = pendingOrders.value.findIndex(
+        o => (o.id || o.folio) === (selectedOrder.value.id || selectedOrder.value.folio)
+      )
       if (idx > -1) pendingOrders.value.splice(idx, 1)
+
       processingOrders.value.push(selectedOrder.value)
       completedToday.value++
       alert(`✓ Orden ${selectedOrder.value.folio} finalizada y enviada al repartidor`)
       currentView.value = 'menu'
       selectedOrder.value = null
       currentStep.value = 1
-    }
-
-    const updateOrderStatus = (status) => {
-      console.log(`[operador] actualizar estado ${selectedOrder.value?.folio} -> ${status}`)
-      // Persistencia opcional:
-      // await post(`/api/operator/orders/${selectedOrder.value.id}/advance`, { to: 'PROC' })
     }
 
     // Copiar al portapapeles los datos NFC
@@ -538,10 +545,7 @@ export default {
       }
     }
 
-    const isLikelyUrl = (s) => {
-      if (!s || typeof s !== 'string') return false
-      return /^https?:\/\//i.test(s)
-    }
+    const isLikelyUrl = (s) => /^https?:\/\//i.test(s || '')
 
     // Si volvemos de /impresion con ?step=quality&orderId=..., saltamos al Paso 2
     const tryJumpToQuality = () => {
@@ -552,7 +556,7 @@ export default {
         if (hit) {
           selectOrder(hit)
           currentStep.value = 2
-          router.replace({ query: {} }) // limpia query
+          router.replace({ query: {} })
         }
       }
     }
@@ -576,607 +580,94 @@ export default {
 </script>
 
 <style scoped>
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
-.operador-container {
-  min-height: 100vh;
-  background: linear-gradient(135deg, #0f1419 0%, #1a1f26 100%);
-  color: #e1e8ed;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
-
-/* Header */
-.header {
-  background: rgba(20, 25, 30, 0.95);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid rgba(79, 209, 197, 0.2);
-  position: sticky;
-  top: 0;
-  z-index: 100;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-}
-
-.header-content {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 1.2rem 2rem;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.title {
-  display: flex;
-  align-items: center;
-  gap: 0.8rem;
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: #4fd1c5;
-}
-
-.title .icon {
-  width: 32px;
-  height: 32px;
-  stroke-width: 2;
-}
-
-.header-actions {
-  display: flex;
-  gap: 0.6rem;
-}
-
-.btn-logout,
-.btn-reload {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.6rem 1.2rem;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  font-size: 0.95rem;
-  font-weight: 500;
-}
-
-.btn-reload {
-  background: rgba(79, 209, 197, 0.1);
-  border: 1px solid rgba(79, 209, 197, 0.3);
-  color: #4fd1c5;
-}
-
-.btn-reload:hover {
-  background: rgba(79, 209, 197, 0.2);
-  transform: translateY(-2px);
-}
-
-.btn-logout {
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  color: #ef4444;
-}
-
-.btn-logout:hover {
-  background: rgba(239, 68, 68, 0.2);
-  transform: translateY(-2px);
-}
-
-/* Main Content */
-.main-content {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 2rem;
-}
-
-/* Stats */
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 1.5rem;
-  margin-bottom: 3rem;
-}
-
-.stat-card {
-  background: rgba(20, 25, 30, 0.6);
-  border: 1px solid rgba(79, 209, 197, 0.2);
-  border-radius: 12px;
-  padding: 1.5rem;
-  display: flex;
-  align-items: center;
-  gap: 1.2rem;
-  transition: all 0.3s ease;
-}
-
-.stat-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 25px rgba(79, 209, 197, 0.15);
-  border-color: rgba(79, 209, 197, 0.4);
-}
-
-.stat-icon {
-  width: 60px;
-  height: 60px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.stat-icon svg {
-  width: 30px;
-  height: 30px;
-  stroke-width: 2;
-}
-
-.stat-icon.pending {
-  background: rgba(251, 191, 36, 0.1);
-  color: #fbbf24;
-}
-
-.stat-icon.processing {
-  background: rgba(59, 130, 246, 0.1);
-  color: #3b82f6;
-}
-
-.stat-icon.completed {
-  background: rgba(34, 197, 94, 0.1);
-  color: #22c55e;
-}
-
-.stat-info h3 {
-  font-size: 2rem;
-  font-weight: 700;
-  color: #4fd1c5;
-}
-
-.stat-info p {
-  color: #9ca3af;
-  font-size: 0.9rem;
-}
-
-/* Orders */
-.orders-section {
-  margin-top: 2rem;
-}
-
-.section-title {
-  font-size: 1.5rem;
-  color: #4fd1c5;
-  margin-bottom: 1.5rem;
-  font-weight: 600;
-}
-
-.error-state {
-  color: #ef4444;
-  background: rgba(239, 68, 68, .1);
-  padding: 1rem;
-  border: 1px solid rgba(239, 68, 68, .3);
-  border-radius: 8px;
-  margin-bottom: 1rem;
-}
-
-.empty-state {
-  text-align: center;
-  padding: 4rem 2rem;
-  background: rgba(20, 25, 30, 0.4);
-  border-radius: 12px;
-  border: 1px dashed rgba(79, 209, 197, 0.3);
-}
-
-.empty-state svg {
-  width: 80px;
-  height: 80px;
-  color: #4fd1c5;
-  opacity: 0.5;
-  margin-bottom: 1rem;
-  stroke-width: 1.5;
-}
-
-.empty-state .spin {
-  animation: spin 1s linear infinite;
-}
-
-.empty-state p {
-  color: #9ca3af;
-  font-size: 1.1rem;
-}
-
-.orders-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 1.5rem;
-}
-
-.order-card {
-  background: rgba(20, 25, 30, 0.6);
-  border: 1px solid rgba(79, 209, 197, 0.2);
-  border-radius: 12px;
-  padding: 1.5rem;
-  cursor: pointer;
-  transition: all 0.3s ease;
-}
-
-.order-card:hover {
-  transform: translateY(-6px);
-  box-shadow: 0 12px 30px rgba(79, 209, 197, 0.2);
-  border-color: rgba(79, 209, 197, 0.5);
-}
-
-.order-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1rem;
-}
-
-.order-number {
-  font-size: 1.2rem;
-  font-weight: 700;
-  color: #4fd1c5;
-}
-
-.order-badge {
-  padding: 0.3rem 0.8rem;
-  border-radius: 20px;
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-
-.order-badge.new {
-  background: rgba(251, 191, 36, 0.2);
-  color: #fbbf24;
-  border: 1px solid rgba(251, 191, 36, 0.3);
-}
-
-.order-images {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.8rem;
-  margin-bottom: 1rem;
-}
-
-.image-preview {
-  position: relative;
-  aspect-ratio: 1;
-  border-radius: 8px;
-  overflow: hidden;
-  border: 1px solid rgba(79, 209, 197, 0.2);
-}
-
-.image-preview img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.image-label {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background: rgba(0, 0, 0, 0.8);
-  padding: 0.4rem;
-  text-align: center;
-  font-size: 0.75rem;
-  color: #4fd1c5;
-  font-weight: 600;
-}
-
-.order-info {
-  margin: 1rem 0;
-  font-size: 0.9rem;
-  line-height: 1.6;
-}
-
-.order-info p {
-  color: #9ca3af;
-}
-
-.order-info strong {
-  color: #e1e8ed;
-}
-
-.btn-primary {
-  width: 100%;
-  padding: 0.8rem;
-  background: linear-gradient(135deg, #4fd1c5 0%, #38b2ac 100%);
-  border: none;
-  border-radius: 8px;
-  color: #0f1419;
-  font-weight: 600;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  transition: all 0.3s ease;
-  font-size: 0.95rem;
-}
-
-.btn-primary svg {
-  width: 18px;
-  height: 18px;
-  stroke-width: 2.5;
-}
-
-.btn-primary:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(79, 209, 197, 0.3);
-}
-
-/* Processing */
-.processing-view {
-  max-width: 900px;
-  margin: 0 auto;
-}
-
-.btn-back {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.7rem 1.2rem;
-  background: rgba(79, 209, 197, 0.1);
-  border: 1px solid rgba(79, 209, 197, 0.3);
-  border-radius: 8px;
-  color: #4fd1c5;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  margin-bottom: 2rem;
-  font-size: 0.95rem;
-  font-weight: 500;
-}
-
-.btn-back svg {
-  width: 18px;
-  height: 18px;
-  stroke-width: 2;
-}
-
-.btn-back:hover {
-  background: rgba(79, 209, 197, 0.2);
-  transform: translateX(-4px);
-}
-
-.processing-card {
-  background: rgba(20, 25, 30, 0.6);
-  border: 1px solid rgba(79, 209, 197, 0.2);
-  border-radius: 12px;
-  padding: 2rem;
-}
-
-.processing-header {
-  text-align: center;
-  margin-bottom: 2.5rem;
-  padding-bottom: 1.5rem;
-  border-bottom: 1px solid rgba(79, 209, 197, 0.2);
-}
-
-.processing-header h2 {
-  font-size: 2rem;
-  color: #4fd1c5;
-  margin-bottom: 0.5rem;
-}
-
-.customer-name {
-  color: #9ca3af;
-  font-size: 1.1rem;
-}
-
-/* Steps */
-.step-container {
-  margin-bottom: 1.5rem;
-  padding: 1.5rem;
-  background: rgba(15, 20, 25, 0.5);
-  border: 1px solid rgba(79, 209, 197, 0.15);
-  border-radius: 10px;
-  opacity: 0.5;
-  transition: all 0.3s ease;
-}
-
-.step-container.active {
-  opacity: 1;
-  border-color: rgba(79, 209, 197, 0.5);
-  box-shadow: 0 4px 20px rgba(79, 209, 197, 0.1);
-}
-
-.step-container.completed {
-  opacity: 0.7;
-  border-color: rgba(34, 197, 94, 0.3);
-}
-
-.step-header {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  margin-bottom: 1rem;
-}
-
-.step-number {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: rgba(79, 209, 197, 0.2);
-  color: #4fd1c5;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: 1.1rem;
-}
-
-.step-container.completed .step-number {
-  background: rgba(34, 197, 94, 0.2);
-  color: #22c55e;
-}
-
-.step-header h3 {
-  color: #e1e8ed;
-  font-size: 1.1rem;
-}
-
-.step-content {
-  margin-top: 1.5rem;
-  padding-left: 3rem;
-}
-
-.step-description {
-  color: #9ca3af;
-  margin-bottom: 1.5rem;
-  font-size: 1rem;
-}
-
-.images-display {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1.5rem;
-  margin-bottom: 2rem;
-}
-
-.image-full {
-  text-align: center;
-}
-
-.image-full img {
-  width: 100%;
-  aspect-ratio: 1;
-  object-fit: cover;
-  border-radius: 10px;
-  border: 2px solid rgba(79, 209, 197, 0.3);
-  margin-bottom: 0.8rem;
-}
-
-.image-title {
-  color: #4fd1c5;
-  font-weight: 600;
-  font-size: 0.95rem;
-}
-
-.btn-action {
-  width: 100%;
-  padding: 1rem;
-  background: linear-gradient(135deg, #4fd1c5 0%, #38b2ac 100%);
-  border: none;
-  border-radius: 8px;
-  color: #0f1419;
-  font-weight: 600;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.6rem;
-  transition: all 0.3s ease;
-  font-size: 1rem;
-}
-
-.btn-action:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.btn-action:not(:disabled):hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(79, 209, 197, 0.3);
-}
-
-.btn-action svg {
-  width: 20px;
-  height: 20px;
-  stroke-width: 2.5;
-}
-
-.spinner {
-  width: 20px;
-  height: 20px;
-  border: 3px solid rgba(15, 20, 25, 0.3);
-  border-top-color: #0f1419;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* NFC Data UI */
-.nfc-data {
-  margin: 10px 0 16px;
-}
-
-.nfc-data label {
-  display: block;
-  font-size: .95rem;
-  color: #9ca3af;
-  margin-bottom: 6px;
-}
-
-.nfc-data-row {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 8px;
-}
-
-.nfc-input {
-  width: 100%;
-  padding: .6rem .8rem;
-  border-radius: 8px;
-  border: 1px solid rgba(79, 209, 197, 0.25);
-  background: rgba(20, 25, 30, .55);
-  color: #e1e8ed;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-}
-
-.btn-copy {
-  padding: .6rem .9rem;
-  border-radius: 8px;
-  border: 1px solid rgba(79, 209, 197, 0.4);
-  background: rgba(79, 209, 197, 0.15);
-  color: #4fd1c5;
-  cursor: pointer;
-}
-
-.btn-copy:disabled {
-  opacity: .6;
-  cursor: not-allowed;
-}
-
-.nfc-link {
-  display: inline-block;
-  margin-top: 6px;
-  color: #93f2ff;
-  text-decoration: underline;
-}
-
-.nfc-warning {
-  margin-top: .6rem;
-  color: #fbbf24;
-  font-size: .9rem;
-}
-
-/* Responsive */
-@media (max-width: 768px) {
-  .stats-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .orders-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .images-display {
-    grid-template-columns: 1fr;
-  }
-
-  .button-group {
-    grid-template-columns: 1fr;
-  }
-
-  .step-content {
-    padding-left: 1rem;
-  }
+/* (tus estilos, sin cambios) */
+*{margin:0;padding:0;box-sizing:border-box}
+.operador-container{min-height:100vh;background:linear-gradient(135deg,#0f1419 0%,#1a1f26 100%);color:#e1e8ed;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
+.header{background:rgba(20,25,30,.95);backdrop-filter:blur(10px);border-bottom:1px solid rgba(79,209,197,.2);position:sticky;top:0;z-index:100;box-shadow:0 4px 20px rgba(0,0,0,.3)}
+.header-content{max-width:1400px;margin:0 auto;padding:1.2rem 2rem;display:flex;justify-content:space-between;align-items:center}
+.title{display:flex;align-items:center;gap:.8rem;font-size:1.5rem;font-weight:700;color:#4fd1c5}
+.title .icon{width:32px;height:32px;stroke-width:2}
+.header-actions{display:flex;gap:.6rem}
+.btn-logout,.btn-reload{display:flex;align-items:center;gap:.5rem;padding:.6rem 1.2rem;border-radius:8px;cursor:pointer;transition:all .3s ease;font-size:.95rem;font-weight:500}
+.btn-reload{background:rgba(79,209,197,.1);border:1px solid rgba(79,209,197,.3);color:#4fd1c5}
+.btn-reload:hover{background:rgba(79,209,197,.2);transform:translateY(-2px)}
+.btn-logout{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:#ef4444}
+.btn-logout:hover{background:rgba(239,68,68,.2);transform:translateY(-2px)}
+.main-content{max-width:1400px;margin:0 auto;padding:2rem}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:1.5rem;margin-bottom:3rem}
+.stat-card{background:rgba(20,25,30,.6);border:1px solid rgba(79,209,197,.2);border-radius:12px;padding:1.5rem;display:flex;align-items:center;gap:1.2rem;transition:all .3s ease}
+.stat-card:hover{transform:translateY(-4px);box-shadow:0 8px 25px rgba(79,209,197,.15);border-color:rgba(79,209,197,.4)}
+.stat-icon{width:60px;height:60px;border-radius:12px;display:flex;align-items:center;justify-content:center}
+.stat-icon svg{width:30px;height:30px;stroke-width:2}
+.stat-icon.pending{background:rgba(251,191,36,.1);color:#fbbf24}
+.stat-icon.processing{background:rgba(59,130,246,.1);color:#3b82f6}
+.stat-icon.completed{background:rgba(34,197,94,.1);color:#22c55e}
+.stat-info h3{font-size:2rem;font-weight:700;color:#4fd1c5}
+.stat-info p{color:#9ca3af;font-size:.9rem}
+.orders-section{margin-top:2rem}
+.section-title{font-size:1.5rem;color:#4fd1c5;margin-bottom:1.5rem;font-weight:600}
+.error-state{color:#ef4444;background:rgba(239,68,68,.1);padding:1rem;border:1px solid rgba(239,68,68,.3);border-radius:8px;margin-bottom:1rem}
+.empty-state{text-align:center;padding:4rem 2rem;background:rgba(20,25,30,.4);border-radius:12px;border:1px dashed rgba(79,209,197,.3)}
+.empty-state svg{width:80px;height:80px;color:#4fd1c5;opacity:.5;margin-bottom:1rem;stroke-width:1.5}
+.empty-state .spin{animation:spin 1s linear infinite}
+.empty-state p{color:#9ca3af;font-size:1.1rem}
+.orders-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1.5rem}
+.order-card{background:rgba(20,25,30,.6);border:1px solid rgba(79,209,197,.2);border-radius:12px;padding:1.5rem;cursor:pointer;transition:all .3s ease}
+.order-card:hover{transform:translateY(-6px);box-shadow:0 12px 30px rgba(79,209,197,.2);border-color:rgba(79,209,197,.5)}
+.order-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem}
+.order-number{font-size:1.2rem;font-weight:700;color:#4fd1c5}
+.order-badge{padding:.3rem .8rem;border-radius:20px;font-size:.75rem;font-weight:600}
+.order-badge.new{background:rgba(251,191,36,.2);color:#fbbf24;border:1px solid rgba(251,191,36,.3)}
+.order-images{display:grid;grid-template-columns:1fr 1fr;gap:.8rem;margin-bottom:1rem}
+.image-preview{position:relative;aspect-ratio:1;border-radius:8px;overflow:hidden;border:1px solid rgba(79,209,197,.2)}
+.image-preview img{width:100%;height:100%;object-fit:cover}
+.image-label{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.8);padding:.4rem;text-align:center;font-size:.75rem;color:#4fd1c5;font-weight:600}
+.order-info{margin:1rem 0;font-size:.9rem;line-height:1.6}
+.order-info p{color:#9ca3af}
+.order-info strong{color:#e1e8ed}
+.btn-primary{width:100%;padding:.8rem;background:linear-gradient(135deg,#4fd1c5 0%,#38b2ac 100%);border:none;border-radius:8px;color:#0f1419;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:.5rem;transition:all .3s ease;font-size:.95rem}
+.btn-primary svg{width:18px;height:18px;stroke-width:2.5}
+.btn-primary:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(79,209,197,.3)}
+.processing-view{max-width:900px;margin:0 auto}
+.btn-back{display:flex;align-items:center;gap:.5rem;padding:.7rem 1.2rem;background:rgba(79,209,197,.1);border:1px solid rgba(79,209,197,.3);border-radius:8px;color:#4fd1c5;cursor:pointer;transition:all .3s ease;margin-bottom:2rem;font-size:.95rem;font-weight:500}
+.btn-back svg{width:18px;height:18px;stroke-width:2}
+.btn-back:hover{background:rgba(79,209,197,.2);transform:translateX(-4px)}
+.processing-card{background:rgba(20,25,30,.6);border:1px solid rgba(79,209,197,.2);border-radius:12px;padding:2rem}
+.processing-header{text-align:center;margin-bottom:2.5rem;padding-bottom:1.5rem;border-bottom:1px solid rgba(79,209,197,.2)}
+.processing-header h2{font-size:2rem;color:#4fd1c5;margin-bottom:.5rem}
+.customer-name{color:#9ca3af;font-size:1.1rem}
+.step-container{margin-bottom:1.5rem;padding:1.5rem;background:rgba(15,20,25,.5);border:1px solid rgba(79,209,197,.15);border-radius:10px;opacity:.5;transition:all .3s ease}
+.step-container.active{opacity:1;border-color:rgba(79,209,197,.5);box-shadow:0 4px 20px rgba(79,209,197,.1)}
+.step-container.completed{opacity:.7;border-color:rgba(34,197,94,.3)}
+.step-header{display:flex;align-items:center;gap:1rem;margin-bottom:1rem}
+.step-number{width:40px;height:40px;border-radius:50%;background:rgba(79,209,197,.2);color:#4fd1c5;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:1.1rem}
+.step-container.completed .step-number{background:rgba(34,197,94,.2);color:#22c55e}
+.step-header h3{color:#e1e8ed;font-size:1.1rem}
+.step-content{margin-top:1.5rem;padding-left:3rem}
+.step-description{color:#9ca3af;margin-bottom:1.5rem;font-size:1rem}
+.images-display{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-bottom:2rem}
+.image-full{text-align:center}
+.image-full img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;border:2px solid rgba(79,209,197,.3);margin-bottom:.8rem}
+.image-title{color:#4fd1c5;font-weight:600;font-size:.95rem}
+.btn-action{width:100%;padding:1rem;background:linear-gradient(135deg,#4fd1c5 0%,#38b2ac 100%);border:none;border-radius:8px;color:#0f1419;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:.6rem;transition:all .3s ease;font-size:1rem}
+.btn-action:disabled{opacity:.6;cursor:not-allowed}
+.btn-action:not(:disabled):hover{transform:translateY(-2px);box-shadow:0 8px 25px rgba(79,209,197,.3)}
+.btn-action svg{width:20px;height:20px;stroke-width:2.5}
+.spinner{width:20px;height:20px;border:3px solid rgba(15,20,25,.3);border-top-color:#0f1419;border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.nfc-data{margin:10px 0 16px}
+.nfc-data label{display:block;font-size:.95rem;color:#9ca3af;margin-bottom:6px}
+.nfc-data-row{display:grid;grid-template-columns:1fr auto;gap:8px}
+.nfc-input{width:100%;padding:.6rem .8rem;border-radius:8px;border:1px solid rgba(79,209,197,.25);background:rgba(20,25,30,.55);color:#e1e8ed;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace}
+.btn-copy{padding:.6rem .9rem;border-radius:8px;border:1px solid rgba(79,209,197,.4);background:rgba(79,209,197,.15);color:#4fd1c5;cursor:pointer}
+.btn-copy:disabled{opacity:.6;cursor:not-allowed}
+.nfc-link{display:inline-block;margin-top:6px;color:#93f2ff;text-decoration:underline}
+.nfc-warning{margin-top:.6rem;color:#fbbf24;font-size:.9rem}
+@media (max-width:768px){
+  .stats-grid{grid-template-columns:1fr}
+  .orders-grid{grid-template-columns:1fr}
+  .images-display{grid-template-columns:1fr}
+  .button-group{grid-template-columns:1fr}
+  .step-content{padding-left:1rem}
 }
 </style>
