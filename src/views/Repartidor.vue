@@ -10,19 +10,37 @@
           </svg>
           Panel Repartidor
         </h1>
-        <button @click="logout" class="btn-logout">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-            <polyline points="16 17 21 12 16 7"/>
-            <line x1="21" y1="12" x2="9" y2="12"/>
-          </svg>
-          Salir
-        </button>
+
+        <div class="header-actions">
+          <button @click="loadReadyOrders" class="btn-refresh" :disabled="loading">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <polyline points="23 4 23 10 17 10"/>
+              <polyline points="1 20 1 14 7 14"/>
+              <path d="M3.51 9a9 9 0 0 1 14.13-3.36L23 10"/>
+              <path d="M20.49 15a9 9 0 0 1-14.13 3.36L1 14"/>
+            </svg>
+            {{ loading ? 'Cargando…' : 'Recargar' }}
+          </button>
+
+          <button @click="logout" class="btn-logout">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+              <polyline points="16 17 21 12 16 7"/>
+              <line x1="21" y1="12" x2="9" y2="12"/>
+            </svg>
+            Salir
+          </button>
+        </div>
       </div>
     </header>
 
     <!-- Main Content -->
     <main class="main-content">
+      <!-- Mensaje de error -->
+      <div v-if="error" class="error-banner">
+        <strong>Error:</strong> {{ error }}
+      </div>
+
       <!-- Vista Listado de Órdenes -->
       <div v-if="currentView === 'orders'" class="orders-view">
         <div class="stats-grid">
@@ -35,7 +53,7 @@
             </div>
             <div class="stat-info">
               <h3>{{ assignedOrders.length }}</h3>
-              <p>Entregas Pendientes</p>
+              <p>Órdenes READY</p>
             </div>
           </div>
           <div class="stat-card">
@@ -64,30 +82,39 @@
         </div>
 
         <div class="orders-section">
-          <h2 class="section-title">Entregas Asignadas</h2>
+          <h2 class="section-title">Órdenes READY (todas)</h2>
           
-          <div v-if="assignedOrders.length === 0" class="empty-state">
+          <div v-if="loading" class="empty-state">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" class="spin">
+              <circle cx="12" cy="12" r="10" style="opacity: .25"/>
+              <path d="M22 12a10 10 0 0 0-10-10" />
+            </svg>
+            <p>Cargando órdenes…</p>
+          </div>
+
+          <div v-else-if="assignedOrders.length === 0" class="empty-state">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
               <polyline points="20 6 9 17 4 12"/>
             </svg>
-            <p>No tienes entregas pendientes</p>
+            <p>No hay órdenes READY</p>
           </div>
 
           <div v-else class="orders-list">
             <div 
               v-for="order in assignedOrders" 
-              :key="order.id"
+              :key="order.folio || order.id"
               class="delivery-card"
               @click="selectOrder(order)"
             >
               <div class="delivery-header">
                 <div class="order-info-header">
-                  <span class="order-number">#{{ order.id }}</span>
+                  <!-- Muestra SIEMPRE el folio completo (fallback al id) -->
+                  <span class="order-number">#{{ order.folio || order.id }}</span>
                   <span class="priority-badge" :class="order.priority">
                     {{ order.priority === 'high' ? 'Urgente' : 'Normal' }}
                   </span>
                 </div>
-                <div class="order-price">Q{{ order.price.toFixed(2) }}</div>
+                <div class="order-price">Q{{ Number(order.price).toFixed(2) }}</div>
               </div>
 
               <div class="customer-info">
@@ -140,13 +167,13 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
             <polyline points="15 18 9 12 15 6"/>
           </svg>
-          Volver a entregas
         </button>
 
         <div class="delivery-card-detail">
           <div class="detail-header">
-            <h2>Orden #{{ selectedOrder.id }}</h2>
-            <span class="price-badge">Q{{ selectedOrder.price.toFixed(2) }}</span>
+            <!-- Folio completo con fallback -->
+            <h2>Orden #{{ selectedOrder.folio || selectedOrder.id }}</h2>
+            <span class="price-badge">Q{{ Number(selectedOrder.price).toFixed(2) }}</span>
           </div>
 
           <!-- Información del Cliente -->
@@ -214,7 +241,7 @@
           <div v-else-if="!paymentCompleted" class="payment-section">
             <div class="payment-header">
               <h3>Forma de Pago</h3>
-              <div class="payment-amount">Q{{ selectedOrder.price.toFixed(2) }}</div>
+              <div class="payment-amount">Q{{ Number(selectedOrder.price).toFixed(2) }}</div>
             </div>
 
             <div class="payment-methods">
@@ -272,7 +299,7 @@
             <div class="completion-details">
               <div class="detail-row">
                 <span>Orden:</span>
-                <strong>#{{ selectedOrder.id }}</strong>
+                <strong>#{{ selectedOrder.folio || selectedOrder.id }}</strong>
               </div>
               <div class="detail-row">
                 <span>Método de pago:</span>
@@ -280,7 +307,7 @@
               </div>
               <div class="detail-row">
                 <span>Monto:</span>
-                <strong>Q{{ selectedOrder.price.toFixed(2) }}</strong>
+                <strong>Q{{ Number(selectedOrder.price).toFixed(2) }}</strong>
               </div>
             </div>
             <button @click="finishDelivery" class="btn-finish">
@@ -307,54 +334,12 @@ export default {
       paymentCompleted: false,
       selectedPaymentMethod: null,
       transferReference: '',
-      completedToday: 8,
-      totalCollected: 1450.00,
-      assignedOrders: [
-        {
-          id: '2845',
-          customerName: 'Carlos Méndez',
-          address: 'Zona 10, Ciudad de Guatemala, 5ta Av. 12-34',
-          phone: '+502 1234-5678',
-          price: 185.00,
-          nfcType: 'Link',
-          priority: 'high'
-        },
-        {
-          id: '2846',
-          customerName: 'María González',
-          address: 'Zona 15, Vista Hermosa II, Calle Principal 8-90',
-          phone: '+502 9876-5432',
-          price: 185.00,
-          nfcType: 'Contacto',
-          priority: 'normal'
-        },
-        {
-          id: '2847',
-          customerName: 'José Ramírez',
-          address: 'Zona 1, Centro Histórico, 6ta Calle 4-56',
-          phone: '+502 5555-1234',
-          price: 185.00,
-          nfcType: 'Link',
-          priority: 'normal'
-        }
-      ],
-      paymentMethods: [
-        {
-          id: 'cash',
-          name: 'Efectivo',
-          icon: 'cash-icon'
-        },
-        {
-          id: 'transfer',
-          name: 'Transferencia',
-          icon: 'transfer-icon'
-        },
-        {
-          id: 'card',
-          name: 'Tarjeta',
-          icon: 'card-icon'
-        }
-      ]
+      completedToday: 0,
+      totalCollected: 0,
+      assignedOrders: [], // AQUÍ caerán TODAS las READY
+      loading: false,
+      error: null,
+      pageSize: 1000 // pide muchas para que no te limite a 3
     }
   },
   components: {
@@ -383,20 +368,104 @@ export default {
       `
     }
   },
+  mounted() {
+    this.loadReadyOrders();
+  },
   methods: {
+    // Normaliza cualquier fila para asegurar folio siempre presente
+    normalizeOrder(row) {
+      const id = row?.id ?? row?.ordenId ?? row?.orderId ?? null;
+      // el backend puede mandar: folio, numero, orderNumber, etc.
+      const folio = row?.folio || row?.numero || row?.orderNumber || (id ? String(id) : 'SIN-FOLIO');
+      return {
+        id,
+        folio,
+        customerName: row?.customerName || row?.cliente || row?.clienteNombre || row?.nombre_cliente || 'Cliente',
+        address: row?.address || row?.direccion || '',
+        phone: row?.phone || row?.telefono || '',
+        price: Number(row?.price ?? row?.total ?? row?.monto ?? 0),
+        nfcType: row?.nfcType || 'Link',
+        priority: row?.priority || 'normal'
+      }
+    },
+
+    async loadReadyOrders() {
+      this.loading = true;
+      this.error = null;
+      try {
+        // Intenta varias rutas comunes y sin filtrar por repartidor
+        const qs = `state=READY&estado=READY&scope=all&limit=${this.pageSize}&page=1`;
+        const candidates = [
+          `/api/operator/orders?${qs}`,
+          `/api/operator/orders/ready?limit=${this.pageSize}`,
+          `/api/orders?${qs}`,
+          `/api/orders/ready?limit=${this.pageSize}`,
+          `/api/repartidor/orders?${qs}`, // por si la tienes así, pero con scope=all
+          `/api/operator/orders/list-ready?limit=${this.pageSize}`
+        ];
+
+        let rows = null, hit = null, lastErr = null;
+        for (const url of candidates) {
+          try {
+            const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
+            if (!r.ok) { lastErr = `HTTP ${r.status}`; continue; }
+            const body = await r.json();
+
+            // detecta formatos comunes
+            const dataArray =
+              Array.isArray(body) ? body :
+              Array.isArray(body?.data) ? body.data :
+              Array.isArray(body?.items) ? body.items :
+              Array.isArray(body?.rows) ? body.rows :
+              null;
+
+            if (dataArray) {
+              rows = dataArray;
+              hit = url;
+              break;
+            }
+          } catch (e) {
+            lastErr = e?.message || String(e);
+          }
+        }
+
+        if (!rows) {
+          throw new Error(`No se pudo obtener el listado READY. Último error: ${lastErr || 'desconocido'}`);
+        }
+
+        // Normaliza y **NO** limites a 3
+        const normalized = rows.map(this.normalizeOrder);
+
+        // Si el backend te trae asignadas al repartidor por defecto,
+        // intenta filtrar nada (queremos TODAS), ya que ya pedimos scope=all.
+        this.assignedOrders = normalized;
+
+        // Log útil para verificar tamaños:
+        console.log(`READY recibidas: ${this.assignedOrders.length} (desde ${hit})`);
+      } catch (err) {
+        this.error = err?.message || String(err);
+        this.assignedOrders = [];
+      } finally {
+        this.loading = false;
+      }
+    },
+
     logout() {
       if (confirm('¿Estás seguro de que deseas cerrar sesión?')) {
         console.log('Cerrando sesión...');
       }
     },
+
     selectOrder(order) {
-      this.selectedOrder = { ...order };
+      // Garantiza que selectedOrder tenga folio
+      this.selectedOrder = this.normalizeOrder(order);
       this.currentView = 'delivery';
       this.orderReceived = false;
       this.paymentCompleted = false;
       this.selectedPaymentMethod = null;
       this.transferReference = '';
     },
+
     backToOrders() {
       if (this.orderReceived && !this.paymentCompleted) {
         if (!confirm('El pago aún no se ha completado. ¿Deseas volver?')) {
@@ -406,53 +475,59 @@ export default {
       this.currentView = 'orders';
       this.selectedOrder = null;
     },
+
     confirmReceived() {
       this.orderReceived = true;
-      // Actualizar estado en base de datos
       this.updateOrderStatus('received');
     },
+
     selectPaymentMethod(methodId) {
       this.selectedPaymentMethod = methodId;
       if (methodId !== 'transfer') {
         this.transferReference = '';
       }
     },
+
     confirmPayment() {
       if (this.selectedPaymentMethod === 'transfer' && !this.transferReference) {
         alert('Por favor ingresa el número de referencia');
         return;
       }
-      
       this.paymentCompleted = true;
-      // Actualizar estado en base de datos
       this.updateOrderStatus('paid', {
         paymentMethod: this.selectedPaymentMethod,
         reference: this.transferReference
       });
     },
+
     finishDelivery() {
-      // Actualizar estado final
       this.updateOrderStatus('delivered');
       
-      // Remover orden de la lista
-      const index = this.assignedOrders.findIndex(o => o.id === this.selectedOrder.id);
+      // Remover orden de la lista por FOLIO (o id)
+      const key = (o) => (o.folio || o.id);
+      const index = this.assignedOrders.findIndex(o => key(o) === key(this.selectedOrder));
       if (index > -1) {
         this.assignedOrders.splice(index, 1);
       }
-      
-      // Actualizar totales
       this.completedToday++;
-      this.totalCollected += this.selectedOrder.price;
+      this.totalCollected += Number(this.selectedOrder.price || 0);
       
       alert('✓ Entrega finalizada exitosamente');
       this.currentView = 'orders';
       this.selectedOrder = null;
     },
+
     updateOrderStatus(status, data = null) {
-      console.log(`Actualizando orden ${this.selectedOrder.id} a estado: ${status}`, data);
-      // Aquí iría la llamada a tu API
-      // await fetch('/api/orders/update-status', { ... })
+      const folio = this.selectedOrder?.folio || this.selectedOrder?.id;
+      console.log(`Actualizando orden ${folio} a estado: ${status}`, data);
+      // Ejemplo de llamada (ajusta a tu backend real):
+      // return fetch(`/api/operator/orders/${encodeURIComponent(folio)}/set-state`, {
+      //   method: 'POST',
+      //   headers: { 'Content-Type': 'application/json' },
+      //   body: JSON.stringify({ status, ...data })
+      // });
     },
+
     getPaymentMethodName(methodId) {
       const method = this.paymentMethods.find(m => m.id === methodId);
       return method ? method.name : '';
@@ -494,6 +569,12 @@ export default {
   align-items: center;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
 .title {
   display: flex;
   align-items: center;
@@ -508,6 +589,26 @@ export default {
   height: 32px;
   stroke-width: 2;
 }
+
+.btn-refresh {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1rem;
+  background: rgba(79, 209, 197, 0.12);
+  border: 1px solid rgba(79, 209, 197, 0.35);
+  border-radius: 8px;
+  color: #4fd1c5;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+.btn-refresh svg {
+  width: 18px; height: 18px; stroke-width: 2;
+}
+.btn-refresh:hover { background: rgba(79, 209, 197, 0.2); transform: translateY(-1px); }
+.btn-refresh:disabled { opacity: .6; cursor: not-allowed; }
 
 .btn-logout {
   display: flex;
@@ -533,6 +634,17 @@ export default {
 .btn-logout:hover {
   background: rgba(239, 68, 68, 0.2);
   transform: translateY(-2px);
+}
+
+/* Error banner */
+.error-banner {
+  margin: 1rem auto 0;
+  max-width: 1400px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #fecaca;
+  padding: .8rem 1rem;
+  border-radius: 8px;
 }
 
 /* Main Content */
@@ -636,6 +748,8 @@ export default {
   margin-bottom: 1rem;
   stroke-width: 1.5;
 }
+.empty-state .spin { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 
 .empty-state p {
   color: #9ca3af;
@@ -1293,76 +1407,19 @@ export default {
 }
 
 /* Responsive */
-/* Responsive - Solo aplica en móviles reales */
-/* Responsive - Solo aplica en móviles reales */
 @media (max-width: 768px) {
-  .main-content {
-    padding: 1rem;
-  }
-
-  .stats-grid {
-    grid-template-columns: 1fr;
-    gap: 1rem;
-  }
-  
-  .orders-grid,
-  .orders-list {
-    grid-template-columns: 1fr;
-  }
-  
-  .header-content {
-    padding: 1rem;
-  }
-  
-  .title {
-    font-size: 1.2rem;
-  }
-  
-  .title .icon {
-    width: 24px;
-    height: 24px;
-  }
+  .main-content { padding: 1rem; }
+  .stats-grid { grid-template-columns: 1fr; gap: 1rem; }
+  .orders-grid, .orders-list { grid-template-columns: 1fr; }
+  .header-content { padding: 1rem; }
+  .title { font-size: 1.2rem; }
+  .title .icon { width: 24px; height: 24px; }
 }
 
 @media (max-width: 480px) {
-  .stat-card,
-  .stat-card-large {
-    padding: 1rem;
-  }
-  
-  .stat-icon {
-    width: 50px;
-    height: 50px;
-  }
-  
-  .stat-info h3,
-  .stat-info-large h3 {
-    font-size: 1.5rem;
-  }
-  
-  .section-title {
-    font-size: 1.2rem;
-  }
-}
-
-@media (max-width: 480px) {
-  .stat-card,
-  .stat-card-large {
-    padding: 1rem;
-  }
-  
-  .stat-icon {
-    width: 50px;
-    height: 50px;
-  }
-  
-  .stat-info h3,
-  .stat-info-large h3 {
-    font-size: 1.5rem;
-  }
-  
-  .section-title {
-    font-size: 1.2rem;
-  }
+  .stat-card, .stat-card-large { padding: 1rem; }
+  .stat-icon { width: 50px; height: 50px; }
+  .stat-info h3, .stat-info-large h3 { font-size: 1.5rem; }
+  .section-title { font-size: 1.2rem; }
 }
 </style>
