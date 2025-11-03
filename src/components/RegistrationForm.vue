@@ -748,15 +748,27 @@ async function onSubmit() {
     resetForm()
 
     try {
-      await post('/api/notifications/registration-receipt', {
-        email: form.email.trim(),
-        nickname: form.nickname.trim(),
-        phone: form.phone.trim()
-      })
-      console.debug('Comprobante enviado al correo.')
-    } catch (mailErr: any) {
-      console.warn('No se pudo enviar el comprobante de registro:', mailErr?.message || mailErr)
-    }
+  // id que te devuelve /api/auth/register
+  const userId = data?.id
+
+  const payload = {
+    userId,                                     // ← CLAVE
+    email:    form.email?.trim() || '',         // si va vacío, el backend usará userId/nick/phone
+    nickname: form.nickname?.trim() || '',
+    phone:    (form.phone ?? '').toString().trim(),
+    // Mejor: manda la misma foto para el PDF
+    photoBase64: editedDataUrl || originalDataUrl || null
+  }
+
+  console.debug('receipt payload', payload)
+
+  const r = await post('/api/notifications/registration-receipt', payload)
+  console.debug('receipt ok', r)
+} catch (mailErr:any) {
+  console.warn('Receipt error', mailErr?.status, mailErr?.message, mailErr?.body)
+}
+
+
 
     snack.value = true
     resetForm()
