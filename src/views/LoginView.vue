@@ -139,17 +139,25 @@
 <script setup lang="ts">
 import { ref, watch, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { get, post } from '../lib/api' // ← relativo; si usas alias '@', agrega alias en vite.config
-// (Opción B) Import de userCartMigration removido
+import { get, post } from '../lib/api'
 
 const router = useRouter()
 
+/* =========================
+   Helper: ruta por roleId
+   ========================= */
+function routeForRole(roleId: number | null | undefined) {
+  if (roleId === 5) return '/operador'
+  if (roleId === 2) return '/supervisor'   // 👈 NUEVA regla
+  return '/shop'
+}
+
 // ====== Constantes de SLA ======
-const LOGIN_BUDGET_MS = 12_000     // Login ≤ 15 s (cliente reserva 12 s)
-const EXISTS_TIMEOUT_MS = 5_000    // Existencia con tope de 5 s
+const LOGIN_BUDGET_MS = 12_000
+const EXISTS_TIMEOUT_MS = 5_000
 
 // ====== Utilidad de presupuesto de tiempo (para cámara) ======
-let loginDeadline = 0 // se fija al iniciar un intento de login con cámara
+let loginDeadline = 0
 function budgetSignal(deadlineMs: number) {
   const remaining = Math.max(1000, deadlineMs - Date.now())
   const ac = new AbortController()
@@ -169,13 +177,11 @@ async function doLogin() {
   loading.value = true; msg.value = ''; ok.value = false
   try {
     const payload = { credential: credential.value, password: password.value }
-    dbgLog('POST /api/auth/login-with-role', payload) // ← debug
+    dbgLog('POST /api/auth/login-with-role', payload)
 
-    // SLA: abortar a los 12 s
     const ac = new AbortController()
     const timer = window.setTimeout(() => ac.abort(), LOGIN_BUDGET_MS)
 
-    // Usamos el nuevo endpoint que devuelve id + roleId
     const r = await post('/api/auth/login-with-role', payload, { signal: ac.signal } as any)
     window.clearTimeout(timer)
 
@@ -196,9 +202,9 @@ async function doLogin() {
 
         window.dispatchEvent(new Event('auth-sync'))
 
-        // Redirección condicional: roleId === 5 -> /operador; si no, /shop
-        const role = Number(rid)
-        const target = role === 5 ? '/operador' : '/shop'
+        // 👇 Redirección condicional extendida
+        const role = rid != null ? Number(rid) : null
+        const target = routeForRole(role)
         router.push(target)
         return
       }
@@ -210,7 +216,7 @@ async function doLogin() {
   } finally { loading.value = false }
 }
 
-// ====== EXISTENCIA (DEJADO COMO ESTABA, + timeout) ======
+// ====== EXISTENCIA ======
 const existsHint = ref('')
 const existsColor = ref<'success' | 'error' | 'warning' | undefined>(undefined)
 const existsIcon = ref<string | undefined>(undefined)
@@ -254,7 +260,7 @@ async function checkExists() {
   }
 }
 
-// ====== LOGIN CON CÁMARA (con presupuesto ≤ 12 s total) ======
+// ====== LOGIN CON CÁMARA ======
 const loadingCam = ref(false)
 const segmenting = ref(false)
 type Camera = { open: boolean; stream: MediaStream | null; snapshot: string }
@@ -262,14 +268,10 @@ const camera = ref<Camera>({ open: false, stream: null, snapshot: '' })
 const videoRef = ref<HTMLVideoElement | null>(null)
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 
-// parámetros (idénticos a tu Python por defecto)
-const minPercent = ref(55)       // umbral inicial (55 para evitar 59.5 < 60)
+const minPercent = ref(55)
 const useLowThreshold = ref(true)
-
-// Opción A: flag para decidir si se envía credential en el login facial (por defecto false)
 const useCredForCamera = ref(false)
 
-// Tipado para attemptFacial con opciones
 type FacialTag = 'normal' | 'segmentado' | 'segmentado-low-th'
 interface AttemptFacialOptions {
   useCredential?: boolean
@@ -315,8 +317,8 @@ async function takePhoto() {
   c.height = v.videoHeight || 480
   const ctx = c.getContext('2d'); if (!ctx) return
   ctx.drawImage(v, 0, 0, c.width, c.height)
-  let snap = c.toDataURL('image/jpeg', 0.85) // calidad moderada
-  snap = await compressIfLarge(snap, 1_800_000) // ~1.8 MB
+  let snap = c.toDataURL('image/jpeg', 0.85)
+  snap = await compressIfLarge(snap, 1_800_000)
   camera.value.snapshot = snap
   dbgLog('snapshot taken', approximateInfoFromDataUrl(snap))
 }
@@ -325,13 +327,12 @@ async function doLoginWithCamera() {
   if (!camera.value.snapshot) { msg.value = 'Primero toma una foto'; ok.value = false; return }
   loadingCam.value = true; msg.value = ''; ok.value = false
 
-  // Fijar presupuesto global de ≤ 12 s
   loginDeadline = Date.now() + LOGIN_BUDGET_MS
 
   try {
     const firstThreshold = useLowThreshold.value ? minPercent.value : 60
 
-    // 1) intento con la foto cruda (NO enviar credential por defecto)
+    // 1) intento
     const first = await attemptFacial(
       camera.value.snapshot,
       firstThreshold,
@@ -340,11 +341,10 @@ async function doLoginWithCamera() {
     )
     if (first.ok) { afterSuccess(first); return }
 
-    // 2) reintentar con recorte segmentado (si el tiempo restante lo permite)
+    // 2) reintento segmentado
     if (isProviderNoResult(first) || (first.message || '').toLowerCase().includes('rostro')) {
       if (Date.now() >= loginDeadline) { showFail({ message: 'Tiempo excedido' }); return }
       dbgLog('POST /api/util/segmentar-rostro (retry)')
-      segmenting.value = true
       const b1 = budgetSignal(loginDeadline)
       const seg = await post('/api/util/segmentar-rostro', { photoBase64: camera.value.snapshot }, { signal: b1.signal } as any)
       b1.cancel()
@@ -365,7 +365,7 @@ async function doLoginWithCamera() {
         )
         if (second.ok) { afterSuccess(second); return }
 
-        // 3) último intento bajando el umbral 5 puntos (mín 40)
+        // 3) último intento bajando umbral
         const lowered = Math.max(40, firstThreshold - 5)
         dbgLog('third attempt with lowered threshold', { lowered, firstThreshold })
         if (lowered < firstThreshold && Date.now() < loginDeadline) {
@@ -381,8 +381,6 @@ async function doLoginWithCamera() {
         showFail(second); return
       }
     }
-
-    // si no aplicó segmentación o falló igual
     showFail(first)
   } catch (e: any) {
     ok.value = false
@@ -393,7 +391,7 @@ async function doLoginWithCamera() {
   }
 }
 
-// ===== Opción A: attemptFacial con opciones y sin credential por defecto =====
+// ===== attemptFacial =====
 async function attemptFacial(
   dataUrl: string,
   minPercent: number,
@@ -407,10 +405,7 @@ async function attemptFacial(
   } = options
 
   const payload: any = { photoBase64: dataUrl, minPercent }
-  // *** clave de Opción A: sólo enviar credential si se solicita explícitamente y hay texto ***
-  if (useCredential && credVal?.trim()) {
-    payload.credential = credVal.trim()
-  }
+  if (useCredential && credVal?.trim()) payload.credential = credVal.trim()
 
   const b = budgetSignal(loginDeadline)
   dbgLog(`POST ${endpoint}`, {
@@ -425,7 +420,6 @@ async function attemptFacial(
   b.cancel()
 
   dbgLog('login facial fast resp', { tag, ...r })
-
   return { ok: !!(r?.success && r?.matched), message: r?.message, raw: r }
 }
 
@@ -444,7 +438,6 @@ function afterSuccess(res: any) {
   if (uid) {
     localStorage.setItem('userId', String(uid))
 
-    // Obtener roleId (si viene en la respuesta, úsalo; si no, consulta el endpoint de rol)
     ;(async () => {
       let rid = r?.roleId ?? r?.rolId ?? r?.RolId
       if (rid == null) {
@@ -454,19 +447,17 @@ function afterSuccess(res: any) {
         } catch { /* silencioso */ }
       }
       if (rid != null) localStorage.setItem('roleId', String(rid))
-
       window.dispatchEvent(new Event('auth-sync'))
 
-      // Redirección condicional
-      const role = Number(rid)
-      const target = role === 5 ? '/operador' : '/shop'
+      // 👇 Redirección condicional extendida (incluye supervisor)
+      const role = rid != null ? Number(rid) : null
+      const target = routeForRole(role)
       closeCamera()
       router.push(target)
     })()
     return
   }
 
-  // Fallback si no hubo uid
   closeCamera()
   router.push('/shop')
 }
@@ -517,7 +508,6 @@ async function compressIfLarge(dataUrl: string, maxLen = 1_800_000) {
   })
 }
 
-/** Convierte cualquier dataURL a JPEG y asegura un lado mínimo (e.g. 360 px) */
 async function toJpegWithMinSide(dataUrl: string, minSide = 360, quality = 0.92) {
   return new Promise<string>((resolve) => {
     const img = new Image()
