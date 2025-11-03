@@ -1,3 +1,4 @@
+<!-- src/views/Repartidor.vue -->
 <template>
   <div class="repartidor-container">
     <!-- Header -->
@@ -12,7 +13,7 @@
         </h1>
 
         <div class="header-actions">
-          <button @click="loadReadyOrders" class="btn-refresh" :disabled="loading">
+          <button @click="loadReadyOrders" class="btn-refresh" :disabled="loading || actionLoading">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
               <polyline points="23 4 23 10 17 10"/>
               <polyline points="1 20 1 14 7 14"/>
@@ -22,7 +23,7 @@
             {{ loading ? 'Cargando…' : 'Recargar' }}
           </button>
 
-          <button @click="logout" class="btn-logout">
+          <button @click="logout" class="btn-logout" :disabled="actionLoading">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
               <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
               <polyline points="16 17 21 12 16 7"/>
@@ -162,7 +163,7 @@
 
       <!-- Vista de Entrega Individual -->
       <div v-else-if="currentView === 'delivery'" class="delivery-view">
-        <button @click="backToOrders" class="btn-back">
+        <button @click="backToOrders" class="btn-back" :disabled="actionLoading">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
             <polyline points="15 18 9 12 15 6"/>
           </svg>
@@ -227,7 +228,7 @@
               </div>
               <p class="step-text">¿Confirmas que recibiste el producto y el cliente lo ha recibido?</p>
             </div>
-            <button @click="confirmReceived" class="btn-confirm">
+            <button @click="confirmReceived" class="btn-confirm" :disabled="actionLoading">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
                 <polyline points="20 6 9 17 4 12"/>
               </svg>
@@ -249,6 +250,7 @@
                 @click="selectPaymentMethod(method.id)"
                 class="payment-method"
                 :class="{ active: selectedPaymentMethod === method.id }"
+                :disabled="actionLoading"
               >
                 <div class="method-icon">
                   <component :is="method.icon" />
@@ -269,13 +271,14 @@
                 type="text" 
                 placeholder="Número de referencia"
                 class="input-reference"
+                :disabled="actionLoading"
               />
             </div>
 
             <button 
               @click="confirmPayment" 
               class="btn-confirm-payment"
-              :disabled="selectedPaymentMethod === 'transfer' && !transferReference"
+              :disabled="(selectedPaymentMethod === 'transfer' && !transferReference) || actionLoading"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
                 <polyline points="20 6 9 17 4 12"/>
@@ -308,7 +311,7 @@
                 <strong>Q{{ Number(selectedOrder.price).toFixed(2) }}</strong>
               </div>
             </div>
-            <button @click="finishDelivery" class="btn-finish">
+            <button @click="finishDelivery" class="btn-finish" :disabled="actionLoading">
               Finalizar Entrega
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
                 <polyline points="9 18 15 12 9 6"/>
@@ -338,7 +341,9 @@ export default {
       loading: false,
       error: null,
       pageSize: 1000,
-      // Agregamos los métodos de pago que usas en el template
+      repartidorUsuarioId: null,     // ← se establece en mounted()
+      actionLoading: false,          // ← bloquea UI durante llamadas
+      // Métodos de pago mostrados en UI
       paymentMethods: [
         { id: 'cash',      name: 'Efectivo',      icon: 'cash-icon' },
         { id: 'transfer',  name: 'Transferencia', icon: 'transfer-icon' },
@@ -373,22 +378,53 @@ export default {
     }
   },
   mounted() {
+    // Recupera id del repartidor desde storage (si lo manejas en login)
+    this.repartidorUsuarioId = this.restoreCourierId();
     this.loadReadyOrders();
   },
   methods: {
-    // Normaliza cualquier fila para asegurar folio y nombre del cliente
+    // === Helpers ===
+    apiHeaders() {
+      return {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+        // agrega Auth aquí si lo necesitas
+      };
+    },
+    async apiGET(url) {
+      const r = await fetch(url, { headers: this.apiHeaders() });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    },
+    async apiPOST(url, body) {
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: this.apiHeaders(),
+        body: JSON.stringify(body || {})
+      });
+      if (!r.ok) {
+        const txt = await r.text().catch(() => '');
+        throw new Error(`HTTP ${r.status}${txt ? `: ${txt}` : ''}`);
+      }
+      return r.json().catch(() => ({}));
+    },
+    restoreCourierId() {
+      // intenta leer del storage (ajústalo al nombre que uses en tu login)
+      const s = localStorage.getItem('repartidorUsuarioId') || localStorage.getItem('usuarioId');
+      const n = Number(s);
+      return Number.isFinite(n) && n > 0 ? n : null;
+    },
+
+    // Normaliza filas recibidas desde el backend
     normalizeOrder(row) {
       const id = row?.id ?? row?.ordenId ?? row?.orderId ?? null;
       const folio = row?.folio || row?.numero || row?.orderNumber || (id ? String(id) : 'SIN-FOLIO');
-
-      // Intenta varios nombres de campo para el cliente (backend ya manda customerName)
       const customerName =
         row?.customerName ||
+        row?.nickname ||
         row?.contactoNombre ||
-        row?.cliente ||
         row?.clienteNombre ||
-        row?.nombre_cliente ||
-        `Usuario ${row?.usuario_id ?? ''}`.trim();
+        (row?.usuario_id ? `Cliente Usuario ${row.usuario_id}` : 'Cliente');
 
       return {
         id,
@@ -398,7 +434,8 @@ export default {
         phone: row?.phone || row?.telefono || '',
         price: Number(row?.price ?? row?.total ?? row?.monto ?? 0),
         nfcType: row?.nfcType || 'Link',
-        priority: row?.priority || 'normal'
+        priority: row?.priority || 'normal',
+        usuario_id: row?.usuario_id ?? null
       }
     },
 
@@ -406,22 +443,18 @@ export default {
       this.loading = true;
       this.error = null;
       try {
-        // Endpoint dedicado que NO filtra por operador:
-        const url = `/api/repartidor/orders-ready?limit=${this.pageSize}`;
-        const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        const body = await r.json();
+        const qp = new URLSearchParams({ limit: String(this.pageSize) });
+        if (this.repartidorUsuarioId) qp.set('repartidorUsuarioId', String(this.repartidorUsuarioId));
+        const url = `/api/repartidor/orders-ready?` + qp.toString();
 
+        const body = await this.apiGET(url);
         const rows =
-          Array.isArray(body)      ? body :
-          Array.isArray(body.items) ? body.items :
-          Array.isArray(body.data)  ? body.data :
-          Array.isArray(body.rows)  ? body.rows : null;
-
-        if (!rows) throw new Error('Formato de respuesta no reconocido');
+          Array.isArray(body)        ? body :
+          Array.isArray(body.items)  ? body.items :
+          Array.isArray(body.data)   ? body.data :
+          Array.isArray(body.rows)   ? body.rows : [];
 
         this.assignedOrders = rows.map(this.normalizeOrder);
-        console.log(`READY recibidas: ${this.assignedOrders.length} (desde ${url})`);
       } catch (err) {
         this.error = err?.message || String(err);
         this.assignedOrders = [];
@@ -432,7 +465,9 @@ export default {
 
     logout() {
       if (confirm('¿Estás seguro de que deseas cerrar sesión?')) {
-        console.log('Cerrando sesión...');
+        // limpia storage si aplica
+        // localStorage.removeItem('token'); localStorage.removeItem('usuarioId');
+        location.reload();
       }
     },
 
@@ -455,56 +490,91 @@ export default {
       this.selectedOrder = null;
     },
 
-    confirmReceived() {
-      this.orderReceived = true;
-      this.updateOrderStatus('received');
+    // === Flujo de reparto (consume endpoints nuevos) ===
+    async confirmReceived() {
+      try {
+        this.actionLoading = true;
+        const folio = this.selectedOrder?.folio || this.selectedOrder?.id;
+        await this.apiPOST(`/api/repartidor/orders/${encodeURIComponent(folio)}/confirm-received`, {
+          repartidorUsuarioId: this.repartidorUsuarioId
+        });
+        this.orderReceived = true;
+      } catch (e) {
+        alert(`No se pudo confirmar recibido: ${e.message}`);
+        console.error('confirm-received error', e);
+      } finally {
+        this.actionLoading = false;
+      }
     },
 
     selectPaymentMethod(methodId) {
       this.selectedPaymentMethod = methodId;
-      if (methodId !== 'transfer') {
-        this.transferReference = '';
-      }
+      if (methodId !== 'transfer') this.transferReference = '';
     },
 
-    confirmPayment() {
+    async confirmPayment() {
       if (this.selectedPaymentMethod === 'transfer' && !this.transferReference) {
         alert('Por favor ingresa el número de referencia');
         return;
       }
-      this.paymentCompleted = true;
-      this.updateOrderStatus('paid', {
-        paymentMethod: this.selectedPaymentMethod,
-        reference: this.transferReference
-      });
-    },
-
-    finishDelivery() {
-      this.updateOrderStatus('delivered');
-      
-      // Remueve de la lista por folio (o id)
-      const key = (o) => (o.folio || o.id);
-      const index = this.assignedOrders.findIndex(o => key(o) === key(this.selectedOrder));
-      if (index > -1) {
-        this.assignedOrders.splice(index, 1);
+      try {
+        this.actionLoading = true;
+        const folio = this.selectedOrder?.folio || this.selectedOrder?.id;
+        await this.apiPOST(`/api/repartidor/orders/${encodeURIComponent(folio)}/confirm-payment`, {
+          method: this.selectedPaymentMethod,                   // 'cash' | 'transfer' | 'card'
+          reference: this.transferReference || null,
+          repartidorUsuarioId: this.repartidorUsuarioId
+        });
+        this.paymentCompleted = true;
+      } catch (e) {
+        alert(`No se pudo registrar el pago: ${e.message}`);
+        console.error('confirm-payment error', e);
+      } finally {
+        this.actionLoading = false;
       }
-      this.completedToday++;
-      this.totalCollected += Number(this.selectedOrder.price || 0);
-      
-      alert('✓ Entrega finalizada exitosamente');
-      this.currentView = 'orders';
-      this.selectedOrder = null;
     },
 
-    updateOrderStatus(status, data = null) {
+    async finishDelivery() {
       const folio = this.selectedOrder?.folio || this.selectedOrder?.id;
-      console.log(`Actualizando orden ${folio} a estado: ${status}`, data);
-      // Aquí harías el POST real a tu backend si ya tienes el endpoint:
-      // return fetch(`/api/operator/orders/${encodeURIComponent(folio)}/set-state`, {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify({ status, ...data })
-      // });
+      try {
+        this.actionLoading = true;
+
+        // 1) endpoint oficial
+        try {
+          await this.apiPOST(`/api/repartidor/orders/${encodeURIComponent(folio)}/finish-delivery`, {
+            repartidorUsuarioId: this.repartidorUsuarioId
+          });
+        } catch (e1) {
+          // 2) alias de compatibilidad (/finish) por si tu backend lo expone
+          console.warn('finish-delivery falló, probando alias /finish', e1);
+          await this.apiPOST(`/api/repartidor/orders/${encodeURIComponent(folio)}/finish`, {
+            repartidorUsuarioId: this.repartidorUsuarioId
+          });
+        }
+
+        // Remueve de la lista
+        const key = (o) => (o.folio || o.id);
+        const index = this.assignedOrders.findIndex(o => key(o) === key(this.selectedOrder));
+        if (index > -1) this.assignedOrders.splice(index, 1);
+
+        this.completedToday++;
+        this.totalCollected += Number(this.selectedOrder.price || 0);
+
+        alert('✓ Entrega finalizada exitosamente');
+        this.currentView = 'orders';
+        this.selectedOrder = null;
+      } catch (e) {
+        alert(`No se pudo finalizar la entrega: ${e.message}`);
+        console.error('finish-delivery error', e);
+      } finally {
+        this.actionLoading = false;
+      }
+    },
+
+    // (queda para compatibilidad si lo seguías usando en consola)
+    async updateOrderStatus(status, data = null) {
+      const folio = this.selectedOrder?.folio || this.selectedOrder?.id;
+      console.log(`updateOrderStatus -> ${folio}: ${status}`, data);
     },
 
     getPaymentMethodName(methodId) {
