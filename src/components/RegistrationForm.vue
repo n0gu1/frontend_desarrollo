@@ -7,42 +7,21 @@
 
     <v-form @submit.prevent="onSubmit">
       <div class="text-center mb-5">
-        <div
-          ref="stageRef"
-          class="photo-stage mx-auto"
-          :class="{ clickable: !basePhotoUrl }"
-          @click="!basePhotoUrl && triggerFile()"
-        >
+        <div ref="stageRef" class="photo-stage mx-auto" :class="{ clickable: !basePhotoUrl }"
+          @click="!basePhotoUrl && triggerFile()">
           <template v-if="basePhotoUrl">
-            <img
-              :src="basePhotoUrl"
-              alt="Foto de perfil"
-              class="stage-photo"
-              :style="{ filter: cssFilter }"
-              @load="onBaseLoaded"
-            />
+            <img :src="basePhotoUrl" alt="Foto de perfil" class="stage-photo" :style="{ filter: cssFilter }"
+              @load="onBaseLoaded" />
 
-            <div
-              v-for="s in stickers"
-              :key="s.id"
-              class="sticker"
-              :class="{ active: s.id === activeStickerId }"
-              :style="stickerStyle(s)"
-              @mousedown.prevent="startDrag($event, s.id)"
-              @touchstart.prevent="startDrag($event, s.id)"
-              @click.stop="activeStickerId = s.id"
-            >
+            <div v-for="s in stickers" :key="s.id" class="sticker" :class="{ active: s.id === activeStickerId }"
+              :style="stickerStyle(s)" @mousedown.prevent="startDrag($event, s.id)"
+              @touchstart.prevent="startDrag($event, s.id)" @click.stop="activeStickerId = s.id">
               <template v-if="s.type === 'emoji'">
                 {{ s.char }}
               </template>
               <template v-else>
-                <img
-                  :src="s.src"
-                  :alt="s.name"
-                  class="sticker-img"
-                  :style="{ transform: `translate(-50%, -50%) rotate(${s.rot}deg)` }"
-                  draggable="false"
-                />
+                <img :src="s.src" :alt="s.name" class="sticker-img"
+                  :style="{ transform: `translate(-50%, -50%) rotate(${s.rot}deg)` }" draggable="false" />
               </template>
             </div>
 
@@ -53,13 +32,8 @@
               </v-btn>
               <v-btn size="small" variant="tonal" @click.stop="triggerFile">Cambiar foto</v-btn>
               <v-btn size="small" variant="tonal" @click.stop="openCamera">Usar cámara</v-btn>
-              <v-btn
-                size="small"
-                variant="tonal"
-                color="error"
-                @click.stop="clearEdits"
-                :disabled="!stickers.length && filterKind==='none' && filterLevel===50"
-              >Limpiar</v-btn>
+              <v-btn size="small" variant="tonal" color="error" @click.stop="clearEdits"
+                :disabled="!stickers.length && filterKind === 'none' && filterLevel === 50">Limpiar</v-btn>
             </div>
           </template>
 
@@ -78,27 +52,16 @@
           <div class="mb-4">
             <div class="text-subtitle-2 mb-2">Filtro</div>
             <div class="d-flex ga-2 flex-wrap">
-              <v-chip
-                v-for="opt in filterOptions"
-                :key="opt.value"
-                :color="filterKind === opt.value ? 'primary' : undefined"
-                variant="tonal"
-                @click="filterKind = opt.value"
-              >
+              <v-chip v-for="opt in filterOptions" :key="opt.value"
+                :color="filterKind === opt.value ? 'primary' : undefined" variant="tonal"
+                @click="filterKind = opt.value">
                 {{ opt.label }}
               </v-chip>
             </div>
             <div class="d-flex align-center ga-4 mt-2">
               <span class="text-caption" style="width:70px">Intensidad</span>
-              <v-slider
-                v-model="filterLevel"
-                min="0"
-                max="100"
-                step="1"
-                class="flex-grow-1"
-                density="compact"
-                hide-details
-              />
+              <v-slider v-model="filterLevel" min="0" max="100" step="1" class="flex-grow-1" density="compact"
+                hide-details />
               <span class="text-caption" style="width:40px">{{ filterLevel }}</span>
             </div>
           </div>
@@ -123,14 +86,8 @@
           <div class="mt-4">
             <div class="text-subtitle-2 mb-2">Stickers rápidos (emoji)</div>
             <div class="d-flex ga-2 flex-wrap">
-              <v-btn
-                v-for="emo in stickerEmojiPalette"
-                :key="emo"
-                size="small"
-                variant="tonal"
-                @click="addEmoji(emo)"
-                :title="`Agregar ${emo}`"
-              >
+              <v-btn v-for="emo in stickerEmojiPalette" :key="emo" size="small" variant="tonal" @click="addEmoji(emo)"
+                :title="`Agregar ${emo}`">
                 {{ emo }}
               </v-btn>
             </div>
@@ -138,109 +95,39 @@
         </div>
       </v-expand-transition>
 
-      <v-text-field
-        v-model="form.email"
-        label="Correo electrónico *"
-        type="email"
-        variant="outlined"
-        density="comfortable"
-        :error-messages="emailErrors"
-        :hint="emailHint"
-        persistent-hint
-        class="mb-4"
-        @blur="touch.email = true"
-      />
+      <v-text-field v-model="form.email" label="Correo electrónico *" type="email" variant="outlined"
+        density="comfortable" :error-messages="emailErrors" :hint="emailHint" persistent-hint class="mb-4"
+        @blur="touch.email = true" />
 
-      <v-text-field
-        v-model="form.phone"
-        label="Número de teléfono *"
-        placeholder="+502 1234 5678"
-        variant="outlined"
-        density="comfortable"
-        :error-messages="phoneErrors"
-        :hint="phoneHint"
-        persistent-hint
-        class="mb-4"
-        @update:model-value="sanitizePhone"
-        @blur="touch.phone = true"
-      />
+      <v-text-field v-model="form.phone" label="Número de teléfono *" placeholder="+502 1234 5678" variant="outlined"
+        density="comfortable" :error-messages="phoneErrors" :hint="phoneHint" persistent-hint class="mb-4"
+        @update:model-value="sanitizePhone" @blur="touch.phone = true" />
 
-      <v-text-field
-        v-model="form.birthdate"
-        label="Fecha de nacimiento *"
-        type="date"
-        variant="outlined"
-        density="comfortable"
-        :error-messages="birthErrors"
-        class="mb-6"
-        @blur="touch.birthdate = true"
-      />
+      <v-text-field v-model="form.birthdate" label="Fecha de nacimiento *" type="date" variant="outlined"
+        density="comfortable" :error-messages="birthErrors" class="mb-6" @blur="touch.birthdate = true" />
 
-      <v-text-field
-        v-model="form.nickname"
-        label="Nickname *"
-        placeholder="usuario_123"
-        variant="outlined"
-        density="comfortable"
-        :error-messages="nickErrors"
-        :hint="nickHint"
-        persistent-hint
-        class="mb-4"
-        @update:model-value="sanitizeNickname"
-        @blur="touch.nickname = true"
-      />
+      <v-text-field v-model="form.nickname" label="Nickname *" placeholder="usuario_123" variant="outlined"
+        density="comfortable" :error-messages="nickErrors" :hint="nickHint" persistent-hint class="mb-4"
+        @update:model-value="sanitizeNickname" @blur="touch.nickname = true" />
 
-      <v-text-field
-        v-model="form.password"
-        label="Contraseña *"
-        type="password"
-        variant="outlined"
-        density="comfortable"
-        :error-messages="passErrors"
-        class="mb-2"
-        @blur="touch.password = true"
-      />
+      <v-text-field v-model="form.password" label="Contraseña *" type="password" variant="outlined"
+        density="comfortable" :error-messages="passErrors" class="mb-2" @blur="touch.password = true" />
       <div class="d-flex align-center mb-4">
-        <v-progress-linear
-          class="flex-grow-1 mr-3"
-          :model-value="passwordStrength.value"
-          height="6"
-          rounded
-          :color="passwordStrength.color"
-        />
+        <v-progress-linear class="flex-grow-1 mr-3" :model-value="passwordStrength.value" height="6" rounded
+          :color="passwordStrength.color" />
         <span class="text-caption" :class="`text-${passwordStrength.color}`">{{ passwordStrength.label }}</span>
       </div>
 
-      <v-text-field
-        v-model="form.confirm"
-        label="Confirmar contraseña *"
-        type="password"
-        variant="outlined"
-        density="comfortable"
-        :error-messages="confirmErrors"
-        class="mb-6"
-        @blur="touch.confirm = true"
-      />
+      <v-text-field v-model="form.confirm" label="Confirmar contraseña *" type="password" variant="outlined"
+        density="comfortable" :error-messages="confirmErrors" class="mb-6" @blur="touch.confirm = true" />
 
       <div class="mb-2 font-weight-medium">Preferencias de notificaciones *</div>
       <div class="radio-group mb-1">
-        <v-sheet
-          v-for="opt in notifOptions"
-          :key="opt.value"
-          class="radio-item"
-          :class="{ selected: form.notifications.includes(opt.value) }"
-          rounded="lg"
-          border
-          @click="toggleNotif(opt.value)"
-        >
-          <v-checkbox
-            :model-value="form.notifications.includes(opt.value)"
-            :label="opt.label"
-            hide-details
-            density="compact"
-            color="primary"
-            @click.stop="toggleNotif(opt.value)"
-          />
+        <v-sheet v-for="opt in notifOptions" :key="opt.value" class="radio-item"
+          :class="{ selected: form.notifications.includes(opt.value) }" rounded="lg" border
+          @click="toggleNotif(opt.value)">
+          <v-checkbox :model-value="form.notifications.includes(opt.value)" :label="opt.label" hide-details
+            density="compact" color="primary" @click.stop="toggleNotif(opt.value)" />
         </v-sheet>
       </div>
       <div v-if="notifErrors.length" class="text-error text-caption mb-4">{{ notifErrors[0] }}</div>
@@ -266,35 +153,17 @@
 
         <v-card-text>
           <div class="cam-stage" ref="camStageRef">
-            <video
-              ref="videoRef"
-              autoplay
-              playsinline
-              class="cam-video"
-              :style="{ filter: cssFilter }"
-            ></video>
+            <video ref="videoRef" autoplay playsinline class="cam-video" :style="{ filter: cssFilter }"></video>
 
-            <div
-              v-for="s in stickers"
-              :key="s.id"
-              class="sticker"
-              :class="{ active: s.id === activeStickerId }"
-              :style="stickerStyle(s)"
-              @mousedown.prevent="startDrag($event, s.id)"
-              @touchstart.prevent="startDrag($event, s.id)"
-              @click.stop="activeStickerId = s.id"
-            >
+            <div v-for="s in stickers" :key="s.id" class="sticker" :class="{ active: s.id === activeStickerId }"
+              :style="stickerStyle(s)" @mousedown.prevent="startDrag($event, s.id)"
+              @touchstart.prevent="startDrag($event, s.id)" @click.stop="activeStickerId = s.id">
               <template v-if="s.type === 'emoji'">
                 {{ s.char }}
               </template>
               <template v-else>
-                <img
-                  :src="s.src"
-                  :alt="s.name"
-                  class="sticker-img"
-                  :style="{ transform: `translate(-50%, -50%) rotate(${s.rot}deg)` }"
-                  draggable="false"
-                />
+                <img :src="s.src" :alt="s.name" class="sticker-img"
+                  :style="{ transform: `translate(-50%, -50%) rotate(${s.rot}deg)` }" draggable="false" />
               </template>
             </div>
 
@@ -303,13 +172,8 @@
               <v-btn size="small" variant="tonal" @click.stop="showFiltersCam = !showFiltersCam">
                 {{ showFiltersCam ? 'Ocultar filtros' : 'Filtros' }}
               </v-btn>
-              <v-btn
-                size="small"
-                variant="tonal"
-                color="error"
-                @click.stop="clearEdits"
-                :disabled="!stickers.length && filterKind==='none' && filterLevel===50"
-              >Limpiar</v-btn>
+              <v-btn size="small" variant="tonal" color="error" @click.stop="clearEdits"
+                :disabled="!stickers.length && filterKind === 'none' && filterLevel === 50">Limpiar</v-btn>
             </div>
           </div>
 
@@ -324,27 +188,16 @@
               <div class="mb-2">
                 <div class="text-subtitle-2 mb-2">Filtro (en vivo)</div>
                 <div class="d-flex ga-2 flex-wrap">
-                  <v-chip
-                    v-for="opt in filterOptions"
-                    :key="opt.value"
-                    :color="filterKind === opt.value ? 'primary' : undefined"
-                    variant="tonal"
-                    @click="filterKind = opt.value"
-                  >
+                  <v-chip v-for="opt in filterOptions" :key="opt.value"
+                    :color="filterKind === opt.value ? 'primary' : undefined" variant="tonal"
+                    @click="filterKind = opt.value">
                     {{ opt.label }}
                   </v-chip>
                 </div>
                 <div class="d-flex align-center ga-4 mt-2">
                   <span class="text-caption" style="width:70px">Intensidad</span>
-                  <v-slider
-                    v-model="filterLevel"
-                    min="0"
-                    max="100"
-                    step="1"
-                    class="flex-grow-1"
-                    density="compact"
-                    hide-details
-                  />
+                  <v-slider v-model="filterLevel" min="0" max="100" step="1" class="flex-grow-1" density="compact"
+                    hide-details />
                   <span class="text-caption" style="width:40px">{{ filterLevel }}</span>
                 </div>
               </div>
@@ -369,14 +222,8 @@
               <div class="mt-3">
                 <div class="text-subtitle-2 mb-2">Stickers rápidos (emoji)</div>
                 <div class="d-flex ga-2 flex-wrap">
-                  <v-btn
-                    v-for="emo in stickerEmojiPalette"
-                    :key="emo"
-                    size="small"
-                    variant="tonal"
-                    @click="addEmoji(emo)"
-                    :title="`Agregar ${emo}`"
-                  >
+                  <v-btn v-for="emo in stickerEmojiPalette" :key="emo" size="small" variant="tonal"
+                    @click="addEmoji(emo)" :title="`Agregar ${emo}`">
                     {{ emo }}
                   </v-btn>
                 </div>
@@ -399,12 +246,7 @@
         <v-card-title class="text-h6">Elige un sticker</v-card-title>
         <v-card-text>
           <div class="sticker-grid">
-            <div
-              v-for="item in stickerCatalog"
-              :key="item.id"
-              class="sticker-card"
-              @click="addImageSticker(item)"
-            >
+            <div v-for="item in stickerCatalog" :key="item.id" class="sticker-card" @click="addImageSticker(item)">
               <img :src="item.src" :alt="item.name" />
               <div class="sticker-name">{{ item.name }}</div>
             </div>
@@ -433,13 +275,13 @@ type Form = {
 type Touch = Record<keyof Omit<Form, 'notifications'>, boolean> & { notifications: boolean }
 type Camera = { open: boolean; stream: MediaStream | null; snapshot: string }
 
-const fileRef   = ref<HTMLInputElement | null>(null)
-const basePhotoUrl = ref<string>('')      
-const naturalSize = reactive({ w: 0, h: 0 }) 
+const fileRef = ref<HTMLInputElement | null>(null)
+const basePhotoUrl = ref<string>('')
+const naturalSize = reactive({ w: 0, h: 0 })
 
-const camera   = reactive<Camera>({ open: false, stream: null, snapshot: '' })
+const camera = reactive<Camera>({ open: false, stream: null, snapshot: '' })
 const videoRef = ref<HTMLVideoElement | null>(null)
-const canvasRef= ref<HTMLCanvasElement | null>(null)
+const canvasRef = ref<HTMLCanvasElement | null>(null)
 const camStageRef = ref<HTMLElement | null>(null)
 
 const form = reactive<Form>({ email: '', phone: '', birthdate: '', nickname: '', password: '', confirm: '', notifications: [] })
@@ -473,13 +315,13 @@ function takePhoto() {
 }
 function useSnapshot() {
   if (!camera.snapshot) return
-  setBasePhoto(camera.snapshot) 
+  setBasePhoto(camera.snapshot)
   closeCamera()
 }
 function onFileChange(e: Event) {
   const f = (e.target as HTMLInputElement).files?.[0]; if (!f) return
   if (basePhotoUrl.value.startsWith('blob:')) URL.revokeObjectURL(basePhotoUrl.value)
-  setBasePhoto(URL.createObjectURL(f)) 
+  setBasePhoto(URL.createObjectURL(f))
 }
 onUnmounted(() => { stopCamera(); if (basePhotoUrl.value.startsWith('blob:')) URL.revokeObjectURL(basePhotoUrl.value) })
 function onBaseLoaded(ev: Event) {
@@ -491,62 +333,62 @@ const stageRef = ref<HTMLElement | null>(null)
 const showFilters = ref(true)
 const showFiltersCam = ref(false)
 
-type FilterKind = 'none'|'bn'|'sepia'|'warm'|'cool'|'bright'|'contrast'
-const filterKind  = ref<FilterKind>('none')
+type FilterKind = 'none' | 'bn' | 'sepia' | 'warm' | 'cool' | 'bright' | 'contrast'
+const filterKind = ref<FilterKind>('none')
 const filterLevel = ref<number>(50) // 0..100
 const filterOptions = [
-  { value: 'none',    label: 'Ninguno' },
-  { value: 'bn',      label: 'B/N' },
-  { value: 'sepia',   label: 'Sepia' },
-  { value: 'warm',    label: 'Cálido' },
-  { value: 'cool',    label: 'Frío' },
-  { value: 'bright',  label: 'Brillo' },
-  { value: 'contrast',label: 'Contraste' },
+  { value: 'none', label: 'Ninguno' },
+  { value: 'bn', label: 'B/N' },
+  { value: 'sepia', label: 'Sepia' },
+  { value: 'warm', label: 'Cálido' },
+  { value: 'cool', label: 'Frío' },
+  { value: 'bright', label: 'Brillo' },
+  { value: 'contrast', label: 'Contraste' },
 ] as const
 
 const cssFilter = computed(() => buildFilterCss(filterKind.value, filterLevel.value))
 function buildFilterCss(kind: FilterKind, lvl: number) {
   const t = Math.max(0, Math.min(100, lvl)) / 100 // 0..1
   switch (kind) {
-    case 'none':    return 'none'
-    case 'bn':      return `grayscale(${t})`
-    case 'sepia':   return `sepia(${t})`
-    case 'bright':  return `brightness(${1 + t*0.6})`
-    case 'contrast':return `contrast(${1 + t*0.8})`
-    case 'warm':    return `saturate(${1 + t*0.6}) hue-rotate(${-15*t}deg)`
-    case 'cool':    return `saturate(${1 + t*0.4}) hue-rotate(${15*t}deg)`
+    case 'none': return 'none'
+    case 'bn': return `grayscale(${t})`
+    case 'sepia': return `sepia(${t})`
+    case 'bright': return `brightness(${1 + t * 0.6})`
+    case 'contrast': return `contrast(${1 + t * 0.8})`
+    case 'warm': return `saturate(${1 + t * 0.6}) hue-rotate(${-15 * t}deg)`
+    case 'cool': return `saturate(${1 + t * 0.4}) hue-rotate(${15 * t}deg)`
   }
 }
 
 type StickerEmoji = { id: string; type: 'emoji'; char: string; name?: string; x: number; y: number; size: number; rot: number }
-type StickerImg   = { id: string; type: 'img';   src: string;  name: string;   x: number; y: number; size: number; rot: number }
+type StickerImg = { id: string; type: 'img'; src: string; name: string; x: number; y: number; size: number; rot: number }
 type Sticker = StickerEmoji | StickerImg
 const stickers = reactive<Sticker[]>([])
 const activeStickerId = ref<string | null>(null)
 const activeSticker = computed(() => stickers.find(s => s.id === activeStickerId.value) || null)
 
-const stickerEmojiPalette = ['😎','👑','🎩','🥸','😺','🤠','💖','✨', '👌']
+const stickerEmojiPalette = ['😎', '👑', '🎩', '🥸', '😺', '🤠', '💖', '✨', '👌']
 function addEmoji(char: string) {
-  const s: StickerEmoji = { id: 'e'+randId(), type: 'emoji', char, name: char, x: 0.5, y: 0.5, size: 0.22, rot: 0 }
+  const s: StickerEmoji = { id: 'e' + randId(), type: 'emoji', char, name: char, x: 0.5, y: 0.5, size: 0.22, rot: 0 }
   stickers.push(s); activeStickerId.value = s.id
 }
 
 const stickerCatalog = [
-  { id: 'horns',    name: 'Cachos',      src: new URL('../assets/stickers/horns.svg', import.meta.url).toString(),     defSize: 0.58, defY: 0.23 },
-  { id: 'cat-ears', name: 'Orejas gato', src: new URL('../assets/stickers/cat-ears.svg', import.meta.url).toString(),  defSize: 0.62, defY: 0.25 },
-  { id: 'anime-eyes', name: 'Ojos anime',src: new URL('../assets/stickers/anime-eyes.svg', import.meta.url).toString(), defSize: 0.55, defY: 0.54 },
-  { id: 'blush',    name: 'Rubor',       src: new URL('../assets/stickers/blush.svg', import.meta.url).toString(),     defSize: 0.45, defY: 0.65 },
-  { id: 'sparkles', name: 'Brillos',     src: new URL('../assets/stickers/sparkles.svg', import.meta.url).toString(),  defSize: 0.40, defY: 0.40 },
-  { id: 'crown',    name: 'Corona',      src: new URL('../assets/stickers/crown.svg', import.meta.url).toString(),     defSize: 0.45, defY: 0.18 },
-  { id: 'umg',    name: 'umg',      src: new URL('../assets/stickers/umg.svg', import.meta.url).toString(),     defSize: 0.45, defY: 0.18 },
-  { id: 'lentes',    name: 'lentes',      src: new URL('../assets/stickers/lentes.svg', import.meta.url).toString(),     defSize: 0.45, defY: 0.18 },
-  { id: 'sombrerovaquero',    name: 'sombrerovaquero',      src: new URL('../assets/stickers/sombrerovaquero.svg', import.meta.url).toString(),     defSize: 0.45, defY: 0.18 },
+  { id: 'horns', name: 'Cachos', src: new URL('../assets/stickers/horns.svg', import.meta.url).toString(), defSize: 0.58, defY: 0.23 },
+  { id: 'cat-ears', name: 'Orejas gato', src: new URL('../assets/stickers/cat-ears.svg', import.meta.url).toString(), defSize: 0.62, defY: 0.25 },
+  { id: 'anime-eyes', name: 'Ojos anime', src: new URL('../assets/stickers/anime-eyes.svg', import.meta.url).toString(), defSize: 0.55, defY: 0.54 },
+  { id: 'blush', name: 'Rubor', src: new URL('../assets/stickers/blush.svg', import.meta.url).toString(), defSize: 0.45, defY: 0.65 },
+  { id: 'sparkles', name: 'Brillos', src: new URL('../assets/stickers/sparkles.svg', import.meta.url).toString(), defSize: 0.40, defY: 0.40 },
+  { id: 'crown', name: 'Corona', src: new URL('../assets/stickers/crown.svg', import.meta.url).toString(), defSize: 0.45, defY: 0.18 },
+  { id: 'umg', name: 'umg', src: new URL('../assets/stickers/umg.svg', import.meta.url).toString(), defSize: 0.45, defY: 0.18 },
+  { id: 'lentes', name: 'lentes', src: new URL('../assets/stickers/lentes.svg', import.meta.url).toString(), defSize: 0.45, defY: 0.18 },
+  { id: 'sombrerovaquero', name: 'sombrerovaquero', src: new URL('../assets/stickers/sombrerovaquero.svg', import.meta.url).toString(), defSize: 0.45, defY: 0.18 },
 ]
 const stickersDialog = ref(false)
-function openStickerDialog(){ stickersDialog.value = true }
-function addImageSticker(item: {id:string; name:string; src:string; defSize:number; defY:number}) {
+function openStickerDialog() { stickersDialog.value = true }
+function addImageSticker(item: { id: string; name: string; src: string; defSize: number; defY: number }) {
   const s: StickerImg = {
-    id: 'i'+randId(),
+    id: 'i' + randId(),
     type: 'img', name: item.name, src: item.src,
     x: 0.5, y: item.defY, size: item.defSize, rot: 0
   }
@@ -563,13 +405,13 @@ function clearEdits() {
   filterKind.value = 'none'; filterLevel.value = 50
   stickers.splice(0, stickers.length); activeStickerId.value = null
 }
-function nudge(dir: 'left'|'right'|'up'|'down') {
+function nudge(dir: 'left' | 'right' | 'up' | 'down') {
   const s = activeSticker.value; if (!s) return
   const delta = 0.01
-  if (dir === 'left')  s.x = clamp01(s.x - delta)
+  if (dir === 'left') s.x = clamp01(s.x - delta)
   if (dir === 'right') s.x = clamp01(s.x + delta)
-  if (dir === 'up')    s.y = clamp01(s.y - delta)
-  if (dir === 'down')  s.y = clamp01(s.y + delta)
+  if (dir === 'up') s.y = clamp01(s.y - delta)
+  if (dir === 'down') s.y = clamp01(s.y + delta)
 }
 function resizeSticker(factor: number) {
   const s = activeSticker.value; if (!s) return
@@ -579,9 +421,9 @@ function rotateSticker(deg: number) {
   const s = activeSticker.value; if (!s) return
   s.rot = ((s.rot + deg) % 360 + 360) % 360
 }
-function clamp(min:number, max:number, v:number) { return Math.max(min, Math.min(max, v)) }
-function clamp01(v:number) { return clamp(0, 1, v) }
-function randId(){ return Math.random().toString(36).slice(2,9) }
+function clamp(min: number, max: number, v: number) { return Math.max(min, Math.min(max, v)) }
+function clamp01(v: number) { return clamp(0, 1, v) }
+function randId() { return Math.random().toString(36).slice(2, 9) }
 
 function getStageEl(): HTMLElement | null {
   return camera.open ? camStageRef.value : stageRef.value
@@ -589,7 +431,7 @@ function getStageEl(): HTMLElement | null {
 
 function stickerStyle(s: Sticker) {
   const stage = getStageEl()
-  const w = stage ? stage.clientWidth  : 1
+  const w = stage ? stage.clientWidth : 1
   const h = stage ? stage.clientHeight : 1
   const px = s.x * w
   const py = s.y * h
@@ -618,7 +460,7 @@ function onDragMove(e: MouseEvent | TouchEvent) {
   if (e instanceof TouchEvent) { const t = e.touches[0]; if (!t) return; cx = t.clientX; cy = t.clientY }
   else { cx = (e as MouseEvent).clientX; cy = (e as MouseEvent).clientY }
   const relX = clamp01((cx - rect.left) / rect.width)
-  const relY = clamp01((cy - rect.top)  / rect.height)
+  const relY = clamp01((cy - rect.top) / rect.height)
   const s = stickers.find(st => st.id === dragId); if (!s) return
   s.x = relX; s.y = relY
   if ((e as any).cancelable) e.preventDefault()
@@ -714,14 +556,14 @@ async function composeEditedImage(): Promise<string> {
         ctx.drawImage(img, sx, sy, side, side, 0, 0, side, side)
 
         const bmpMap = new Map<string, ImageBitmap>()
-        const imgMap = new Map<string, HTMLImageElement>() 
+        const imgMap = new Map<string, HTMLImageElement>()
         await Promise.all(
           stickers.filter(s => s.type === 'img').map(async (s) => {
             const si = s as StickerImg
             try {
               const bmp = await loadStickerBitmap(si.src)
               if (bmp) { bmpMap.set(s.id, bmp); return }
-            } catch {}
+            } catch { }
             // fallback Image()
             const im = await loadStickerImage(si.src)
             if (im) imgMap.set(s.id, im)
@@ -782,7 +624,7 @@ async function loadStickerBitmap(src: string): Promise<ImageBitmap | null> {
   try {
     const res = await fetch(src, { cache: 'force-cache' })
     if (!res.ok) return null
-    const blob = await res.blob() 
+    const blob = await res.blob()
     try {
       const bmp = await createImageBitmap(blob)
       return bmp
@@ -815,7 +657,7 @@ async function reencodeToJpeg(dataUrl: string, quality = 0.92): Promise<string> 
       const out = canvas.toDataURL('image/jpeg', quality)
       resolve(out)
     }
-    img.onerror = () => resolve(dataUrl) 
+    img.onerror = () => resolve(dataUrl)
     img.src = dataUrl
   })
 }
@@ -866,31 +708,44 @@ async function onSubmit() {
     originalDataUrl = basePhotoUrl.value || null
   }
   try {
-    const noEdits = (filterKind.value === 'none' && filterLevel.value === 50 && stickers.length === 0)
-    editedDataUrl = basePhotoUrl.value ? (noEdits ? null : await composeEditedImage()) : null
+    editedDataUrl = basePhotoUrl.value ? await composeEditedImage() : null
   } catch (e) {
     console.error('Compose error', e)
     editedDataUrl = null
   }
 
   // Mimes
-  const photoMime  = originalDataUrl ? (mimeFromDataUrl(originalDataUrl) || 'image/jpeg') : null
-  const photo2Mime = editedDataUrl   ? (mimeFromDataUrl(editedDataUrl)   || 'image/png')  : null
+  const photoMime = originalDataUrl ? (mimeFromDataUrl(originalDataUrl) || 'image/jpeg') : null
+  const photo2Mime = editedDataUrl ? (mimeFromDataUrl(editedDataUrl) || 'image/png') : null
 
   try {
     const data = await post('/api/auth/register', {
       email: form.email,
       phone: form.phone || null,
-      birthdate: form.birthdate,
+      // usa el string del input date:
+      birthdateText: form.birthdate,      // <-- en vez de birthdate
       nickname: form.nickname,
       password: form.password,
-      photoBase64:  originalDataUrl,  
-      photoMime:    photoMime,
-      photo2Base64: editedDataUrl,    
-      photo2Mime:   photo2Mime,
+      photoBase64: originalDataUrl,
+      photoMime: photoMime,
+      photo2Base64: editedDataUrl,
+      photo2Mime: photo2Mime,
       roleId: 4
     })
-    console.debug('Usuario creado', data?.id)
+
+    console.debug('register resp', data)
+
+    if (!data?.success) {
+      errorMsg.value = data?.message || 'No se pudo registrar'
+      // si el backend devuelve mensajes específicos:
+      if ((data?.message || '').toLowerCase().includes('correo')) serverErrors.email = data.message
+      if ((data?.message || '').toLowerCase().includes('tel')) serverErrors.phone = data.message
+      if ((data?.message || '').toLowerCase().includes('nick')) serverErrors.nickname = data.message
+      return
+    }
+
+    snack.value = true
+    resetForm()
 
     try {
       await post('/api/notifications/registration-receipt', {
@@ -899,7 +754,7 @@ async function onSubmit() {
         phone: form.phone.trim()
       })
       console.debug('Comprobante enviado al correo.')
-    } catch (mailErr:any) {
+    } catch (mailErr: any) {
       console.warn('No se pudo enviar el comprobante de registro:', mailErr?.message || mailErr)
     }
 
@@ -927,12 +782,12 @@ function setStageKeyListeners() {
   window.addEventListener('keydown', (e) => {
     if (!activeSticker.value) return
     if (e.key === 'Delete' || e.key === 'Backspace') { removeActive(); e.preventDefault(); return }
-    if (e.key === 'ArrowLeft')  { nudge('left');  e.preventDefault() }
+    if (e.key === 'ArrowLeft') { nudge('left'); e.preventDefault() }
     if (e.key === 'ArrowRight') { nudge('right'); e.preventDefault() }
-    if (e.key === 'ArrowUp')    { nudge('up');    e.preventDefault() }
-    if (e.key === 'ArrowDown')  { nudge('down');  e.preventDefault() }
-    if (e.key === '+')          { resizeSticker(1.1); e.preventDefault() }
-    if (e.key === '-')          { resizeSticker(0.9); e.preventDefault() }
+    if (e.key === 'ArrowUp') { nudge('up'); e.preventDefault() }
+    if (e.key === 'ArrowDown') { nudge('down'); e.preventDefault() }
+    if (e.key === '+') { resizeSticker(1.1); e.preventDefault() }
+    if (e.key === '-') { resizeSticker(0.9); e.preventDefault() }
     if (e.key === 'r' || e.key === 'R') { rotateSticker(15); e.preventDefault() }
   })
 }
@@ -975,61 +830,158 @@ onMounted(() => setStageKeyListeners())
   margin: 0 auto;
   border-radius: 50%;
   border: 3px dashed #cbd5e0;
-  display: flex; align-items: center; justify-content: center;
-  background: rgba(102,126,234,0.05);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(102, 126, 234, 0.05);
   overflow: hidden;
 }
-.photo-stage.clickable:hover { border-color: #667eea; background: rgba(102, 126, 234, 0.1); cursor: pointer; }
 
-.photo-empty { text-align: center; color: #718096; font-size: 14px; }
-.stage-photo { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; user-select: none; pointer-events: none; }
-
-.stage-toolbar {
-  position: absolute; bottom: 6px; left: 50%; transform: translateX(-50%);
-  display: flex; gap: 6px; background: rgba(255,255,255,0.7); padding: 4px 8px;
-  border-radius: 999px; backdrop-filter: blur(6px);
+.photo-stage.clickable:hover {
+  border-color: #667eea;
+  background: rgba(102, 126, 234, 0.1);
+  cursor: pointer;
 }
 
-.cam-stage { position: relative; }
-.cam-video { width: 100%; border-radius: 12px; background: #000; }
+.photo-empty {
+  text-align: center;
+  color: #718096;
+  font-size: 14px;
+}
 
-.cam-toolbar { bottom: 8px; }
+.stage-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  user-select: none;
+  pointer-events: none;
+}
+
+.stage-toolbar {
+  position: absolute;
+  bottom: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.7);
+  padding: 4px 8px;
+  border-radius: 999px;
+  backdrop-filter: blur(6px);
+}
+
+.cam-stage {
+  position: relative;
+}
+
+.cam-video {
+  width: 100%;
+  border-radius: 12px;
+  background: #000;
+}
+
+.cam-toolbar {
+  bottom: 8px;
+}
 
 .sticker {
   position: absolute;
-  left: 50%; top: 50%;
+  left: 50%;
+  top: 50%;
   transform: translate(-50%, -50%);
-  user-select: none; cursor: move; line-height: 1;
-  filter: drop-shadow(0 2px 2px rgba(0,0,0,0.15));
+  user-select: none;
+  cursor: move;
+  line-height: 1;
+  filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.15));
   z-index: 2;
 }
-.sticker.active { outline: 2px dashed #7c3aed; outline-offset: 2px; border-radius: 8px; }
-.sticker-img { display: block; width: 100%; height: auto; pointer-events: none; }
+
+.sticker.active {
+  outline: 2px dashed #7c3aed;
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+.sticker-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  pointer-events: none;
+}
 
 .sticker-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
   gap: 12px;
 }
-.sticker-card {
-  border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  cursor: pointer; background: #fff; transition: 0.15s;
-}
-.sticker-card:hover { background: #f8fafc; }
-.sticker-card img { width: 100%; height: auto; }
-.sticker-name { margin-top: 6px; font-size: 12px; color: #475569; }
 
-.editor-wrap { border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px; background: rgba(255,255,255,0.7); }
-.radio-group { display: flex; flex-direction: column; gap: 12px; }
-.radio-item { padding: 8px 12px; border: 2px solid #e2e8f0; transition: 0.2s; background: rgba(255, 255, 255, 0.9); }
-.radio-item:hover { border-color: #cbd5e0; background: rgba(102, 126, 234, 0.05); }
-.radio-item.selected { border-color: #667eea; background: rgba(102, 126, 234, 0.1); }
+.sticker-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  background: #fff;
+  transition: 0.15s;
+}
+
+.sticker-card:hover {
+  background: #f8fafc;
+}
+
+.sticker-card img {
+  width: 100%;
+  height: auto;
+}
+
+.sticker-name {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #475569;
+}
+
+.editor-wrap {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.radio-item {
+  padding: 8px 12px;
+  border: 2px solid #e2e8f0;
+  transition: 0.2s;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.radio-item:hover {
+  border-color: #cbd5e0;
+  background: rgba(102, 126, 234, 0.05);
+}
+
+.radio-item.selected {
+  border-color: #667eea;
+  background: rgba(102, 126, 234, 0.1);
+}
 
 .gradient-btn {
   color: white !important;
   background: linear-gradient(135deg, #667eea, #764ba2) !important;
   box-shadow: 0 15px 35px rgba(102, 126, 234, 0.4);
 }
-.cam-preview { width: 100%; border-radius: 12px; }
+
+.cam-preview {
+  width: 100%;
+  border-radius: 12px;
+}
 </style>
