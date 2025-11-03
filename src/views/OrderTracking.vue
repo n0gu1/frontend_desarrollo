@@ -1,7 +1,25 @@
 <!-- src/views/OrderTracking.vue -->
 <template>
   <v-container class="py-6" v-if="loaded">
-    <h2 class="text-h5 mb-4">Seguimiento de la orden {{ folio }}</h2>
+    <!-- Header con accesos a /shop -->
+    <div class="d-flex align-center justify-space-between mb-4 flex-wrap ga-2">
+      <div>
+        <h2 class="text-h5 mb-1">Seguimiento de la orden {{ folio }}</h2>
+      </div>
+
+      <div class="d-flex ga-2">
+        <!-- Botón a /shop por PATH (no requiere nombre de ruta) -->
+        <v-btn
+          variant="outlined"
+          color="secondary"
+          prepend-icon="mdi-storefront"
+          class="text-none"
+          :to="'/shop'"
+        >
+          Ir a la tienda
+        </v-btn>
+      </div>
+    </div>
 
     <!-- Estado / total -->
     <v-card class="mb-6" rounded="xl">
@@ -58,6 +76,18 @@
         </v-list>
       </v-card-text>
     </v-card>
+
+    <!-- FAB fijo para /shop (siempre visible) -->
+    <v-btn
+      class="fab-shop"
+      icon
+      size="large"
+      color="secondary"
+      :to="'/shop'"
+      aria-label="Ir a la tienda"
+    >
+      <v-icon icon="mdi-storefront" />
+    </v-btn>
   </v-container>
 
   <v-container v-else class="text-center py-10">
@@ -67,7 +97,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, RouterLink } from 'vue-router'
 import { get } from '../lib/api'
 
 /* ---- Tipos ---- */
@@ -182,3 +212,13 @@ watch(
   }
 )
 </script>
+
+<style scoped>
+.fab-shop{
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 1100;
+  box-shadow: 0 6px 24px rgba(0,0,0,.25);
+}
+</style>
